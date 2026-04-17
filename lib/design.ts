@@ -120,7 +120,7 @@ export function btn(
     whiteSpace: "nowrap",
   };
   const variants: Record<string, React.CSSProperties> = {
-    primary: { background: T.accent,    color: "#fff" },
+    primary: { background: T.accentMid, color: "#fff" },  // green-700 — better contrast on pale green bg
     ghost:   { background: "transparent", color: T.muted, border: "1px solid " + T.border },
     success: { background: T.successBg, color: T.success, border: "1px solid " + T.successBdr },
     danger:  { background: T.errorBg,   color: T.error,   border: "1px solid " + T.errorBdr },
