@@ -589,10 +589,9 @@ Return complete revised {"items":[...]} list.`,
       <div style={{ width:32, height:32, borderRadius:8, background:T.accent, display:"flex", alignItems:"center", justifyContent:"center", fontSize:17, fontWeight:900, color:"#fff" }}>⌖</div>
       <div>
         <div style={{ fontSize:16, fontWeight:800, color:T.text, letterSpacing:"-0.5px" }}>
-          Sitemap<span style={{ color:T.accent }}>Slicer</span>
-          <span style={{ fontSize:10, color:T.dim, marginLeft:6, fontWeight:600 }}>3.0</span>
+          SaaS<span style={{ color:T.accent }}>Slicer</span>
         </div>
-        <div style={{ fontSize:10, color:T.dim, letterSpacing:"0.6px", textTransform:"uppercase" }}>Content Strategy Intelligence</div>
+        <div style={{ fontSize:10, color:T.dim, letterSpacing:"0.6px", textTransform:"uppercase" }}>Competitive Content Intelligence</div>
       </div>
     </div>
   );
