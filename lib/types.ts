@@ -48,18 +48,18 @@ export type CategoryType =
 
 // Priority order — higher index = higher crawl priority
 export const CATEGORY_PRIORITY: Record<CategoryType, number> = {
-  blog:              9,
-  product_service:   10,
-  industry_vertical: 8,
-  solution:          9,
-  who_we_serve:      8,
-  use_case:          7,
-  comparison:        8,
-  case_study:        7,
-  resource_guide:    6,
-  landing_page:      5,
-  pricing:           5,
-  docs_support:      2,
+  product_service:   10,  // core product pages
+  industry_vertical: 10,  // verticals = key gap signal
+  who_we_serve:      10,  // role/persona pages = key gap signal
+  comparison:        10,  // vs/alternative pages = high-value BOFU
+  solution:          9,   // solution/use-case pages
+  blog:              9,   // content volume signal
+  case_study:        9,   // customer proof = key gap signal
+  resource_guide:    6,   // educational resources
+  landing_page:      5,   // conversion pages
+  pricing:           5,   // pricing structure
+  use_case:          4,   // often subsumed by solution
+  docs_support:      2,   // low gap priority
   other:             1,
 };
 
@@ -69,9 +69,23 @@ export interface CrawledPage {
   title: string;
   metaDescription: string;
   h1: string;
+  h2s: string[];            // H2 headings — topic coverage depth
+  h3s: string[];            // H3 headings — sub-topic detail
   schemaTypes: string[];    // JSON-LD @type values found
-  wordCountEstimate: number;
+  wordCount: number;        // actual body content word count
+  publishedDate: string;    // ISO date string or "" — content freshness signal
+  integrationsWith: string[]; // integration partner names (if integration page)
   crawlMethod: "fetch" | "skipped" | "failed";
+}
+
+// ─── Review Data ──────────────────────────────────────────────────────────────
+export interface ReviewData {
+  source: string;           // "g2" | "capterra" | "none"
+  productSlug: string;
+  reviewSnippets: string[]; // raw review text extracts (up to 25)
+  painThemes: string[];     // Claude-extracted pain point themes
+  praiseThemes: string[];   // what buyers love — useful for positioning
+  fetchedAt: string;
 }
 
 // ─── Site Analysis ────────────────────────────────────────────────────────────
@@ -89,6 +103,8 @@ export interface SiteAnalysis {
   notableGaps: string[];
   contentVelocitySignal: string;
   schemaTypesFound: string[];
+  integrationsEcosystem: string[];  // integration partner names → ICP signal
+  contentDepthProfile: string;      // summary of content depth/freshness
 }
 
 // ─── Gap Analysis ─────────────────────────────────────────────────────────────
