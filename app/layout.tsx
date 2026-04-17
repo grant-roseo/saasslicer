@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Sitemap Slicer 3.0 — Content Strategy Intelligence",
-  description: "Deep competitive content gap analysis with ICP mapping and strategic recommendations.",
+  title: "SaaS Slicer — Competitive Content Strategy Intelligence",
+  description: "AI-powered competitive content strategy for SaaS. Deep gap analysis, ICP mapping, and actionable recommendations.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
