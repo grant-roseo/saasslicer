@@ -181,14 +181,36 @@ How confident are you these pages represent the "${cluster.name}" category? 0=wr
     const integrationsEcosystem = [...new Set(allIntegrations)];
 
     // Content freshness — derive publishing velocity from dates
+    const totalCrawled = clusters.reduce((s, c) => s + c.crawledPages.length, 0);
     const datedPages = clusters.flatMap(c => c.crawledPages.filter(p => p.publishedDate));
+    const dateConfidence = totalCrawled > 0 ? Math.round((datedPages.length / totalCrawled) * 100) : 0;
     const recentPages = datedPages.filter(p => {
       const d = new Date(p.publishedDate);
       const sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
       return d > sixMonthsAgo;
     }).length;
-    const contentDepthProfile = `${datedPages.length} pages with dates found. ${recentPages} published in last 6 months. ` +
-      `Avg word count: ${Math.round(clusters.flatMap(c => c.crawledPages.map(p => p.wordCount || 0)).reduce((a,b) => a+b, 0) / Math.max(1, clusters.reduce((s,c) => s + c.crawledPages.length, 0)))}w.`;
+
+    // Word count confidence — only meaningful if we crawled enough pages
+    const wordCounts = clusters.flatMap(c => c.crawledPages.map(p => p.wordCount || 0)).filter(w => w > 0);
+    const avgWordCount = wordCounts.length > 0 ? Math.round(wordCounts.reduce((a,b) => a+b, 0) / wordCounts.length) : 0;
+    const wordCountConfidence = totalCrawled > 0 ? Math.round((wordCounts.length / totalCrawled) * 100) : 0;
+
+    // Integration confidence — only meaningful if we found integration pages
+    const integrationPageCount = clusters.flatMap(c => c.urls).filter(u => u.toLowerCase().includes("integrat")).length;
+
+    // Build explicit confidence-tagged profile — prevents false comparisons
+    const contentDepthProfile = [
+      `Crawled ${totalCrawled} pages total.`,
+      dateConfidence >= 30
+        ? `Publication dates: ${datedPages.length}/${totalCrawled} pages (${dateConfidence}% coverage). ${recentPages} published in last 6 months. COMPARABLE.`
+        : `Publication dates: ${datedPages.length}/${totalCrawled} pages (${dateConfidence}% coverage). NOT ENOUGH FOR VELOCITY COMPARISON — observe only, do not compare.`,
+      wordCountConfidence >= 40
+        ? `Avg content depth: ~${avgWordCount} words (${wordCounts.length} pages measured). COMPARABLE.`
+        : `Content depth: ${wordCounts.length} pages measured (${wordCountConfidence}% coverage). NOT ENOUGH FOR DEPTH COMPARISON — observe only.`,
+      integrationPageCount > 0
+        ? `Integration pages found: ${integrationPageCount}. COMPARABLE.`
+        : `Integration pages: none detected. OBSERVE ONLY — may not have integration content.`,
+    ].join(" ");
 
     // Infer which SaaS content taxonomy categories are present vs missing
     const presentTypes = new Set(clusters.map(c => c.categoryType));
@@ -225,7 +247,9 @@ ${missingTypes.join(", ")}
 
 For notableGaps be VERY SPECIFIC: name exact verticals, roles, and page types absent. Use H2 topic data to assess depth gaps too.
 For strengths be SPECIFIC: mention category names, page counts, and content depth where evident.
-For contentVelocitySignal: use the dated pages data to estimate publishing frequency.
+For contentVelocitySignal: ONLY estimate publishing frequency if dateConfidence >= 30% (marked COMPARABLE above). Otherwise state "insufficient date data to assess velocity — observe competitor dates independently."
+For notableGaps/strengths referencing word count or content depth: ONLY include if wordCountConfidence >= 40% (marked COMPARABLE).
+RULE: If a signal is marked "OBSERVE ONLY" or "NOT ENOUGH FOR COMPARISON" — report the observation but do NOT make a comparative claim against another site.
 Set: isClient=${site.role === "client"}, siteId="${site.id}", siteName="${site.name}", domain="${site.domain}", totalUrls=${site.urls.length}`,
       3000,
       {
@@ -304,7 +328,13 @@ Identify 15-25 gaps. For each gap:
 - title: specific page type (e.g. "Construction Industry Landing Page", "VP Legal Role Page", "vs Competitor X")
 - icpRelevance: specific roles affected (e.g. ["VP Legal", "Procurement Manager", "In-House Counsel"])
 - Keep descriptions under 20 words, opportunities under 15 words
-- Be specific about WHICH verticals, roles, and page types are missing`,
+- Be specific about WHICH verticals, roles, and page types are missing
+
+CONFIDENCE RULES for gaps:
+- Structural gaps (missing category/page type): always valid — you can confirm absence by URL inventory
+- Depth gaps (competitor has deeper content): ONLY recommend if wordCountConfidence is COMPARABLE on both sites
+- Velocity gaps (competitor publishes more): ONLY recommend if publication dates are COMPARABLE on both sites. If one side lacks dates, note "Competitor publishes frequently — client velocity unconfirmed" and do NOT set priority above "medium"
+- Integration gaps: ONLY compare if both sides show CONFIRMED integrations. If one side is NOT DETECTED, note as observation only`,
       3000,
       { narrative: "", competitorStrengths: [], clientAdvantages: [], gaps: [] }
     );
@@ -492,20 +522,28 @@ ${clientHas}`,
         }));
       const compPages = c.clusters.filter(cl => cl.categoryType === "comparison")
         .flatMap(cl => cl.crawledPages.filter(p => p.title).slice(0,4).map(p => p.title));
-      const integrations = (c.integrationsEcosystem || []).slice(0, 10).join(", ");
+      const integrations = (c.integrationsEcosystem || []).slice(0, 10);
       const reviews = reviewMap[c.siteName] || "";
+      // Tag what's confirmed vs unconfirmed for this competitor
+      const integrationsNote = integrations.length > 0
+        ? `CONFIRMED: ${integrations.join(", ")} → infer buyer tech stack`
+        : "NOT DETECTED — may exist but not crawled";
       return `${c.siteName}:
   Categories: ${cats}
   Strategy: ${c.contentStrategySum}
-  Integrations: ${integrations || "none detected"} → indicates tech stack / buyer environment
+  Content depth: ${c.contentDepthProfile || "not measured"}
+  Integrations: ${integrationsNote}
   Role/Persona pages: ${rolePages.slice(0,6).join(" | ") || "none found"}
   Vertical pages: ${vertPages.slice(0,6).join(" | ") || "none found"}
   Comparison pages: ${compPages.slice(0,4).join(" | ") || "none"}
-  Buyer reviews (real language): ${reviews || "not available"}`;
+  Buyer reviews: ${reviews ? "CONFIRMED — use for ICP language: " + reviews.slice(0, 400) : "NOT AVAILABLE — infer pain points from page content only"}`;
     }).join("\n\n");
 
-    // Client context including integrations
-    const clientIntegrations = (clientAn.integrationsEcosystem || []).join(", ");
+    // Client context — explicitly tag what we could/couldn't confirm
+    const clientIntegrations = (clientAn.integrationsEcosystem || []);
+    const clientIntegrationNote = clientIntegrations.length > 0
+      ? `CONFIRMED: ${clientIntegrations.join(", ")}`
+      : "NOT DETECTED — do not assume absent, may not have integration pages crawled";
     const clientReviews = reviewMap[clientAn.siteName] || "";
 
     async function icpBatch(batchNum: number, existingNames: string[]): Promise<ICP[]> {
@@ -521,8 +559,9 @@ Scoring: clientCoverageScore=how well client serves them now (0=not at all, 100=
 What client currently has: ${clientCats}
 Client strengths: ${clientAn.strengths.join("; ")}
 Client content gaps: ${clientAn.notableGaps.join("; ")}
-Client integrations: ${clientIntegrations || "none detected"}
-Client buyer reviews: ${clientReviews || "not available"}
+Client integrations: ${clientIntegrationNote}
+Client buyer reviews: ${clientReviews ? "CONFIRMED: " + clientReviews.slice(0, 300) : "NOT AVAILABLE"}
+Client content depth: ${clientAn.contentDepthProfile || "not measured"}
 
 COMPETITOR CONTENT ANALYSIS (with buyer review language):
 ${compDetails}
@@ -535,16 +574,21 @@ ${skip}
 
 Generate ${batchNum === 1 ? "the 8-10 most important" : "8-10 additional distinct"} ICPs.
 
-CRITICAL: If buyer reviews are available above, use the EXACT language from those reviews for pain points — not generic descriptions. "Legal is a bottleneck that kills deals" is better than "contract review efficiency".
+CONFIDENCE RULES — apply to every ICP:
+- ONLY use reviewer language for pain points if reviews are marked CONFIRMED. If NOT AVAILABLE, infer from page titles and H2 headings instead — and note it is inferred.
+- ONLY draw integration-based ICP inferences (e.g. "Salesforce users = sales-led") if integrations are CONFIRMED for that site. If NOT DETECTED, do not infer tech stack.
+- ONLY compare content depth (thin vs deep pages) if contentDepthProfile says COMPARABLE on both sides.
+- One-sided observations are still valid — e.g. "Competitor has 12 integration partners (confirmed)" is useful context even without client data. Just don't frame it as a direct comparison.
+- Client coverage scores (clientCoverageScore) should reflect confirmed gaps only — unknown ≠ uncovered.
 
 For each ICP provide:
-- primaryPains: use buyer review language where available — 3+ specific pains in their own words
-- searchQueries: 4-6 queries they would actually type into Google (long-tail, specific)
-- aiPrompts: 3-4 prompts they would ask Claude/ChatGPT/Gemini (conversational, problem-framed)
-- tofuContentNeeds / mofuContentNeeds / bofuContentNeeds: specific content formats + topics
-- Integration context: if competitor integrates with Salesforce/HubSpot → their ICPs are in sales-led orgs
+- primaryPains: use CONFIRMED review language where available ("Legal is a bottleneck that kills deals" > "contract review efficiency"). If no reviews, infer from page content — mark as "inferred from content".
+- searchQueries: 4-6 specific long-tail queries they would type into Google
+- aiPrompts: 3-4 prompts they would ask Claude/ChatGPT/Gemini — conversational, problem-framed
+- tofuContentNeeds / mofuContentNeeds / bofuContentNeeds: specific content formats + topics for each stage
+- sourceCompetitor: which competitor's content/reviews surfaced this ICP
 
-Focus on role × industry combinations clearly visible in competitor content or reviews that are absent from client's content.`,
+Focus on role × industry combinations clearly visible in competitor content or reviews that are absent from client content.`,
           2500,
           { icps: [] }
         );
