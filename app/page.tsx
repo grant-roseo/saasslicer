@@ -139,12 +139,25 @@ export default function HomePage() {
         <div className="l-section-inner">
           <div className="l-label">Pricing</div>
           <h2 className="l-h2">Affordable by design.</h2>
-          <p className="l-section-sub">Pay for what you use. Each analysis draws on your own API keys &mdash; no markup, no hidden usage fees.</p>
-          <div className="l-pricing-grid">
-            <div className="l-price-card"><div className="l-tier">Starter</div><div className="l-price">Free <span style={{fontSize:14}}>to try</span></div><div className="l-price-sub">Bring your own API key. No account needed.</div><ul><li>1 client + up to 5 competitors</li><li>Full analysis pipeline</li><li>ICP profiles (up to 20)</li><li>Excel + Word doc exports</li><li>Claude, GPT-4o, or Gemini</li><li>Human-in-the-loop review step</li></ul><a href="/app" className="l-btn l-btn-outline" style={{width:"100%",justifyContent:"center"}}>Start analysing</a></div>
-            <div className="l-price-card featured"><div className="l-price-badge">Coming soon</div><div className="l-tier">Pro</div><div className="l-price">TBD <span>/ month</span></div><div className="l-price-sub">Managed credits, saved history, team sharing.</div><ul><li>Everything in Starter</li><li>Managed API credits &mdash; no keys needed</li><li>Saved analysis history</li><li>Team sharing and collaboration</li><li>Bulk competitor runs</li><li>Priority support</li></ul><a href="#" className="l-btn l-btn-primary" style={{width:"100%",justifyContent:"center"}}>Join the waitlist</a></div>
+          <p className="l-section-sub">One plan. Everything included. Two complete content strategies per month — each one saves hours of research and analyst time.</p>
+          <div style={{maxWidth:480}}>
+            <div className="l-price-card featured">
+              <div className="l-tier">SaaS Slicer</div>
+              <div className="l-price">$99 <span>/ month</span></div>
+              <div className="l-price-sub">2 complete content strategies per month. Everything included.</div>
+              <ul>
+                <li>1 client + up to 5 competitors per run</li>
+                <li>Up to 20 ICP profiles with full buyer language</li>
+                <li>Content plan — net new, refresh &amp; repurpose</li>
+                <li>5-tab Excel workbook export</li>
+                <li>Two Word doc narratives (strategy + ICP)</li>
+                <li>Human-in-the-loop expert review step</li>
+                <li>Saveable JSON session — reload and re-export any time</li>
+              </ul>
+              <a href="/app" className="l-btn l-btn-primary" style={{width:"100%",justifyContent:"center",fontSize:15,padding:"13px 0"}}>Get started &rarr;</a>
+            </div>
           </div>
-          <p className="l-price-note">Typical analysis cost: ~$0.50&ndash;$2.00 in AI API credits per run. You pay your API provider directly.</p>
+          <p className="l-price-note" style={{maxWidth:480}}>Each run typically takes 5&ndash;10 minutes. Saves hours of manual competitive research and analyst time per strategy.</p>
         </div>
       </section>
       <div className="l-cta-band">
@@ -152,7 +165,7 @@ export default function HomePage() {
           <h2 className="l-h2">Ready to see what your<br />competitors have built?</h2>
           <p className="l-cta-p">Add your client site and a competitor. SaaS Slicer will map the landscape, find the gaps, and write the strategy &mdash; in one run.</p>
           <a href="/app" className="l-btn l-btn-primary l-btn-lg" style={{fontSize:16,padding:"15px 36px"}}>Start your analysis &rarr;</a>
-          <div className="l-cta-sub">Bring your own API key &middot; No account needed &middot; Results in 5&ndash;10 minutes</div>
+          <div className="l-cta-sub">$99/month &middot; 2 strategies included &middot; Results in 5&ndash;10 minutes</div>
         </div>
       </div>
       <footer className="l-footer">

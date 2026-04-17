@@ -271,7 +271,7 @@
 }
 
 /* Pricing */
-.l-pricing-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 20px; max-width: 800px; }
+.l-pricing-grid { max-width: 480px; }  /* single card layout */
 .l-price-card { background: white; border: 1.5px solid var(--lc-border); border-radius: 16px; padding: 32px; }
 .l-price-card.featured { border-color: var(--green); background: var(--green-pale); position: relative; }
 .l-price-badge {
