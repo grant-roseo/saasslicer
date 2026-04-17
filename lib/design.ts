@@ -129,6 +129,26 @@ export function btn(
   return { ...base, ...variants[variant], ...extra };
 }
 
+// disabled state — solid muted appearance, never washes out white text
+export function btnDisabled(size?: "sm" | "lg"): React.CSSProperties {
+  return {
+    padding: size === "lg" ? "13px 40px" : size === "sm" ? "5px 12px" : "8px 18px",
+    borderRadius: 7,
+    border: "1px solid " + T.border,
+    cursor: "not-allowed",
+    fontFamily: "inherit",
+    fontWeight: 600,
+    fontSize: size === "lg" ? 15 : 13.5,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+    whiteSpace: "nowrap" as const,
+    background: T.borderLight,
+    color: T.dim,
+    transition: "none",
+  };
+}
+
 export const inputStyle: React.CSSProperties = {
   background: T.surface,
   border: "1px solid " + T.border,
