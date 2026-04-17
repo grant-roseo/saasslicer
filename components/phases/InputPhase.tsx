@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
-import { T, card, btn, inputStyle, labelStyle, badge } from "@/lib/design";
+import { T, card, btn, btnDisabled, inputStyle, labelStyle, badge } from "@/lib/design";
 import { getDomain, filterUrls, sampleUrls, parseMultipleXml, discoverSitemapUrls } from "@/lib/sitemap";
 import type { SiteInput, AIProvider, AnalysisState } from "@/lib/types";
 
@@ -150,7 +150,7 @@ function SiteCard({ site, index, isClient, allSites, onChange, onRemove }: SiteC
                 <button
                   onClick={handleVerify}
                   disabled={isVerifying || !site.domain}
-                  style={{ ...btn("primary"), opacity: (isVerifying || !site.domain) ? 0.4 : 1 }}
+                  style={ (isVerifying || !site.domain) ? btnDisabled() : btn("primary") }
                 >
                   {isVerifying ? "⟳ Discovering…" : "Discover Sitemap"}
                 </button>
@@ -175,7 +175,7 @@ function SiteCard({ site, index, isClient, allSites, onChange, onRemove }: SiteC
                   <div style={{ fontSize:12, color: looksLikeXml ? T.error : urlCount > 0 ? T.success : T.muted }}>
                     {looksLikeXml ? "⚠ Looks like XML — use Paste XML tab" : urlCount > 0 ? `✓ ${urlCount} URLs ready` : "Paste one URL per line"}
                   </div>
-                  <button onClick={handleUrlPaste} disabled={urlCount === 0 || looksLikeXml} style={{ ...btn("primary"), opacity: urlCount > 0 && !looksLikeXml ? 1 : 0.35 }}>
+                  <button onClick={handleUrlPaste} disabled={urlCount === 0 || looksLikeXml} style={ urlCount > 0 && !looksLikeXml ? btn("primary") : btnDisabled() }>
                     Use These URLs
                   </button>
                 </div>
@@ -197,7 +197,7 @@ function SiteCard({ site, index, isClient, allSites, onChange, onRemove }: SiteC
                   <div style={{ fontSize:12, color: xmlCount > 0 ? T.success : T.muted }}>
                     {xmlCount > 0 ? `✓ ${xmlCount} <loc> URLs found` : "Paste sitemap XML above"}
                   </div>
-                  <button onClick={handleXmlPaste} disabled={xmlCount === 0} style={{ ...btn("primary"), opacity: xmlCount > 0 ? 1 : 0.35 }}>
+                  <button onClick={handleXmlPaste} disabled={xmlCount === 0} style={ xmlCount > 0 ? btn("primary") : btnDisabled() }>
                     Use These URLs
                   </button>
                 </div>
@@ -374,7 +374,7 @@ export default function InputPhase({
         <button
           onClick={handleStart}
           disabled={!canStart}
-          style={{ ...btn("primary"), fontSize:15, padding:"13px 40px", opacity:canStart ? 1 : 0.35, cursor:canStart ? "pointer" : "not-allowed" }}
+          style={ canStart ? { ...btn("primary"), fontSize:15, padding:"13px 40px" } : btnDisabled("lg") }
         >
           ⚡ Run Analysis
         </button>
