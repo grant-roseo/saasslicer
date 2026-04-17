@@ -223,45 +223,72 @@ Identify ALL significant content gaps. For icpRelevance, use ICP role/industry h
     );
   }
 
-  // ─── Content plan (3 batches × 900 tokens) ─────────────────────────────────
+  // ─── Content plan (3 batches × 1800 tokens) ─────────────────────────────────
   async function generatePlan(
     clientAn: SiteAnalysis,
     gaps: GapAnalysis,
     notes: string
   ): Promise<ContentItem[]> {
+    // Lean system prompt — schema moved to user message to save system token space
+    const SYS = `You are a senior content strategist. Return ONLY valid JSON with no markdown fences. Keep page titles under 8 words and coreAngle under 15 words.`;
     const SCHEMA = `{"priority":1,"pageTitle":"","urlSuggestion":"/path","contentType":"","targetQuery":"","funnelStage":"TOFU","intent":"informational","coreAngle":"","action":"net_new","reasoning":"","gapAddressed":"","estimatedEffort":"medium","wordCountTarget":1200,"icpIds":[],"problemsSolved":[]}`;
-    const SYS = `You are a senior content strategist. Return ONLY valid JSON: {"items":[${SCHEMA}]}. Titles ≤7 words. coreAngle ≤12 words.`;
     const cats = clientAn.clusters.map(c => c.name).join(", ");
 
     const critical = gaps.gaps.filter(g => g.priority === "critical");
     const high     = gaps.gaps.filter(g => g.priority === "high");
     const other    = gaps.gaps.filter(g => g.priority === "medium" || g.priority === "low");
 
+    function extractItems(resp: string): ContentItem[] {
+      const clean = resp.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      // Try direct parse
+      try { const p = JSON.parse(clean); return p.items || p || []; } catch {}
+      // Try extracting {...}
+      const obj = clean.match(/\{[\s\S]+\}/);
+      if (obj) { try { const p = JSON.parse(obj[0]); return p.items || []; } catch {} }
+      // Try extracting [...]
+      const arr = clean.match(/\[[\s\S]+\]/);
+      if (arr) { try { return JSON.parse(arr[0]); } catch {} }
+      return [];
+    }
+
     async function batch(label: string, batchGaps: typeof gaps.gaps, startAt: number, skip: string[]): Promise<ContentItem[]> {
       if (!batchGaps.length) return [];
       try {
         const resp = await callAI(SYS,
-          `Generate 8-10 items for these gaps. Keep all fields concise.
+          `Generate 8-10 content plan items for these gaps.
 GAPS: ${batchGaps.slice(0, 6).map(g => `${g.title}: ${g.opportunity}`).join(" | ")}
 CLIENT CATEGORIES: ${cats}
-${skip.length ? `SKIP (covered): ${skip.join(", ")}` : ""}
+${skip.length ? `SKIP (already covered): ${skip.join(", ")}` : ""}
 NOTES: ${notes || "None"}
-Start priority at ${startAt}. icpIds: use short strings like "vp_legal", "marketing_manager", "smb_owner". Return {"items":[...]} ONLY.`,
-          900
+Start priority numbering at ${startAt}.
+icpIds should be short strings like "vp_legal", "marketing_manager", "smb_owner".
+Return ONLY this JSON structure, no commentary:
+{"items":[${SCHEMA}]}`,
+          1800
         );
-        const clean = resp.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-        const m = clean.match(/\{[\s\S]+\}/);
-        if (m) return JSON.parse(m[0]).items || [];
-      } catch (e) { console.warn(label, e); }
-      return [];
+        const items = extractItems(resp);
+        if (!items.length) addLog(`  ⚠ ${label}: response parsed but returned 0 items`, "warn");
+        return items;
+      } catch (e: any) {
+        addLog(`  ⚠ ${label} failed: ${e.message}`, "warn");
+        return [];
+      }
     }
 
-    const b1 = await batch("Batch 1 critical", critical, 1, []);
-    const b2 = await batch("Batch 2 high", high, b1.length + 1, b1.slice(0,6).map(i => i.pageTitle));
-    const b3 = await batch("Batch 3 other", other, b1.length + b2.length + 1, [...b1,...b2].slice(0,6).map(i => i.pageTitle));
+    addLog("  Batch 1: critical gaps…");
+    const b1 = await batch("Batch 1", critical, 1, []);
+    addLog(`  Batch 1: ${b1.length} items`);
+
+    addLog("  Batch 2: high-priority gaps…");
+    const b2 = await batch("Batch 2", high, b1.length + 1, b1.slice(0,6).map(i => i.pageTitle));
+    addLog(`  Batch 2: ${b2.length} items`);
+
+    addLog("  Batch 3: medium/low gaps…");
+    const b3 = await batch("Batch 3", other, b1.length + b2.length + 1, [...b1,...b2].slice(0,6).map(i => i.pageTitle));
+    addLog(`  Batch 3: ${b3.length} items`);
 
     const all = [...b1, ...b2, ...b3];
-    if (!all.length) throw new Error("Content plan generation returned no items — check API key and retry.");
+    if (!all.length) throw new Error("Content plan returned no items. Check that NEXT_PUBLIC_ANTHROPIC_API_KEY is set in Vercel env vars, then retry.");
     return all.map((item, idx) => ({ ...item, priority: idx + 1 }));
   }
 
