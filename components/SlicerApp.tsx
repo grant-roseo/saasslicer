@@ -372,36 +372,60 @@ CONFIDENCE RULES for gaps:
     addLog(`  Planning from ${allGaps.length} gaps | Client has ${clientExistingPaths.length} indexed URLs`);
 
     function extractItems(resp: string): ContentItem[] {
-      const clean = resp.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      try { const p = JSON.parse(clean); return p.items || p || []; } catch {}
-      const obj = clean.match(/\{[\s\S]+\}/);
-      if (obj) { try { const p = JSON.parse(obj[0]); return p.items || []; } catch {} }
-      const arr = clean.match(/\[[\s\S]+\]/);
-      if (arr) { try { return JSON.parse(arr[0]); } catch {} }
+      // Aggressively strip any markdown fences and surrounding whitespace
+      let clean = resp
+        .replace(/^```[a-z]*\s*/im, "")   // opening fence (```json, ```JSON, etc.)
+        .replace(/\s*```\s*$/im, "")       // closing fence
+        .trim();
+
+      // Attempt 1: direct parse
+      try { const p = JSON.parse(clean); return p.items || (Array.isArray(p) ? p : []); } catch {}
+
+      // Attempt 2: extract outermost {...} — handles trailing text after valid JSON
+      const objMatch = clean.match(/\{[\s\S]*\}/);
+      if (objMatch) { try { const p = JSON.parse(objMatch[0]); return p.items || []; } catch {} }
+
+      // Attempt 3: extract [...] array
+      const arrMatch = clean.match(/\[[\s\S]*\]/);
+      if (arrMatch) { try { return JSON.parse(arrMatch[0]); } catch {} }
+
+      // Attempt 4: RECOVERY — extract individual complete items from truncated JSON.
+      // Handles the case where max_tokens cuts off the response mid-array.
+      // Match objects that contain at least pageTitle (the most critical field).
+      const recovered: ContentItem[] = [];
+      // Find each {...} block that looks like an item
+      const itemRe = /\{[^{}]*"pageTitle"[^{}]*(?:\{[^{}]*\}[^{}]*)*\}/g;
+      let m: RegExpExecArray | null;
+      while ((m = itemRe.exec(clean)) !== null) {
+        try {
+          const item = JSON.parse(m[0]);
+          if (item.pageTitle) recovered.push(item as ContentItem);
+        } catch {}
+      }
+      if (recovered.length > 0) return recovered;
+
       return [];
     }
 
     async function planBatch(label: string, focus: string, funnelFocus: string, startAt: number, skip: string[]): Promise<ContentItem[]> {
       try {
         const resp = await callAI(SYS,
-          `Generate 12-15 content plan items. Focus: ${focus}
+          `Generate 8-10 content plan items. Focus: ${focus}
 
-CONTENT GAPS TO ADDRESS: ${topGaps}
-CLIENT EXISTING CATEGORIES: ${cats}
-${skip.length ? `SKIP (already in plan): ${skip.slice(0,8).join(", ")}` : ""}
-ANALYST NOTES: ${notes || "None"}
+GAPS: ${topGaps.slice(0, 600)}
+EXISTING: ${cats}
+${skip.length ? `SKIP: ${skip.slice(0,6).join(", ")}` : ""}
+NOTES: ${notes || "None"}
 
-FUNNEL FOCUS FOR THIS BATCH:
 ${funnelFocus}
 
-DEDUPLICATION RULE: Before setting action="net_new", check if the client's existing URLs above already contain a similar page. If a similar path exists → set action="refresh". If content exists but in wrong format → set action="repurpose".
+RULES: Check existing paths above — use action="refresh" if similar page exists, "repurpose" if wrong format, "net_new" only if genuinely absent.
+Priority starts at ${startAt}. Keep pageTitle ≤8 words, coreAngle ≤12 words.
+icpIds: vp_legal, procurement_manager, in_house_counsel, compliance_officer, sales_ops, cfo, it_security, contract_manager
+problemsSolved: 2 specific buyer problems max.
 
-Start priority numbering at ${startAt}.
-icpIds: short role strings like "vp_legal", "procurement_manager", "in_house_counsel", "compliance_officer", "sales_ops", "cfo", "it_security", "contract_manager"
-problemsSolved: 2-3 specific problems this page addresses, in buyer language
-
-Return ONLY: {"items":[${SCHEMA}]}`,
-          1800
+Return ONLY valid JSON — no markdown, no commentary: {"items":[${SCHEMA}]}`,
+          2500
         );
         const items = extractItems(resp);
         addLog(`  ${label}: ${items.length} items`, items.length > 0 ? "success" : "warn");
@@ -413,16 +437,22 @@ Return ONLY: {"items":[${SCHEMA}]}`,
       }
     }
 
+    // Compact client URL context — enough to detect existing pages without bloating input
+    // 40 sampled paths ≈ 200 tokens; previously 150 paths ≈ 1500 tokens
+    const existingPathSample = clientExistingPaths
+      .filter(p => p.length > 3)
+      .sort()
+      .filter((_, i) => i % Math.max(1, Math.floor(clientExistingPaths.length / 40)) === 0)
+      .slice(0, 40)
+      .join(", ");
+    const existingCtx = `CLIENT HAS (sample of existing paths — set action="refresh" if similar exists): ${existingPathSample}\nFULL CATEGORY INVENTORY: ${clientHas}`;
+
     // Batch A: TOFU — awareness, education, thought leadership
     addLog("  Batch A: TOFU awareness & education pages…");
     const bA = await planBatch(
       "Batch A",
       "TOFU awareness content: educational guides, blog series, resource pages, glossary pages, industry trend reports, explainer content, how-to articles, category education",
-      `TOFU (informational): target early-stage buyers researching the problem. Mix of blog posts, guides, calculators, templates.
-CLIENT EXISTING URLS (sample — mark similar pages as refresh not net_new):
-${clientExistingPaths.slice(0, 150).join("\n")}
-CLIENT CURRENTLY HAS:
-${clientHas}`,
+      `TOFU (informational): target early-stage buyers researching the problem. Mix of blog posts, guides, calculators, templates.\n${existingCtx}`,
       1,
       []
     );
@@ -432,11 +462,7 @@ ${clientHas}`,
     const bB = await planBatch(
       "Batch B",
       "MOFU consideration content: industry vertical pages, role/persona pages, solution pages, use-case pages, integration pages, benefit/value pages",
-      `MOFU (commercial): target buyers evaluating solutions. Prioritise missing industry verticals, role pages, and solution/use-case pages.
-CLIENT EXISTING URLS (sample — mark similar pages as refresh not net_new):
-${clientExistingPaths.slice(0, 150).join("\n")}
-CLIENT CURRENTLY HAS:
-${clientHas}`,
+      `MOFU (commercial): target buyers evaluating solutions. Prioritise missing industry verticals, role pages, and solution/use-case pages.\n${existingCtx}`,
       bA.length + 1,
       bA.slice(0,6).map(i => i.pageTitle)
     );
@@ -446,11 +472,7 @@ ${clientHas}`,
     const bC = await planBatch(
       "Batch C",
       "BOFU conversion content: comparison pages (vs competitors), case studies, ROI calculators, demo landing pages, customer success stories, security/trust pages",
-      `BOFU (transactional): target buyers ready to decide. Prioritise comparison pages, customer proof, and conversion pages.
-CLIENT EXISTING URLS (sample — mark similar pages as refresh not net_new):
-${clientExistingPaths.slice(0, 100).join("\n")}
-CLIENT CURRENTLY HAS:
-${clientHas}`,
+      `BOFU (transactional): target buyers ready to decide. Prioritise comparison pages, customer proof, and conversion pages.\n${existingCtx}`,
       bA.length + bB.length + 1,
       [...bA,...bB].slice(0,8).map(i => i.pageTitle)
     );
