@@ -234,9 +234,14 @@ Identify ALL significant content gaps. For icpRelevance, use ICP role/industry h
     const SCHEMA = `{"priority":1,"pageTitle":"","urlSuggestion":"/path","contentType":"","targetQuery":"","funnelStage":"TOFU","intent":"informational","coreAngle":"","action":"net_new","reasoning":"","gapAddressed":"","estimatedEffort":"medium","wordCountTarget":1200,"icpIds":[],"problemsSolved":[]}`;
     const cats = clientAn.clusters.map(c => c.name).join(", ");
 
-    const critical = gaps.gaps.filter(g => g.priority === "critical");
-    const high     = gaps.gaps.filter(g => g.priority === "high");
-    const other    = gaps.gaps.filter(g => g.priority === "medium" || g.priority === "low");
+    // Normalise priority to lowercase so filter works regardless of what the AI returns
+    const allGaps = (gaps.gaps || []).map(g => ({ ...g, priority: (g.priority || "medium").toLowerCase() as typeof g.priority }));
+    const critical = allGaps.filter(g => g.priority === "critical");
+    const high     = allGaps.filter(g => g.priority === "high");
+    const other    = allGaps.filter(g => g.priority === "medium" || g.priority === "low" || (g.priority !== "critical" && g.priority !== "high"));
+    addLog(`  Gaps breakdown — critical:${critical.length} high:${high.length} other:${other.length} (${allGaps.length} total)`);
+    // Safety net: if all buckets empty but we have gaps, put everything in "other"
+    const effectiveOther = (!critical.length && !high.length && !other.length && allGaps.length) ? allGaps : other;
 
     function extractItems(resp: string): ContentItem[] {
       const clean = resp.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
@@ -284,7 +289,7 @@ Return ONLY this JSON structure, no commentary:
     addLog(`  Batch 2: ${b2.length} items`);
 
     addLog("  Batch 3: medium/low gaps…");
-    const b3 = await batch("Batch 3", other, b1.length + b2.length + 1, [...b1,...b2].slice(0,6).map(i => i.pageTitle));
+    const b3 = await batch("Batch 3", effectiveOther, b1.length + b2.length + 1, [...b1,...b2].slice(0,6).map(i => i.pageTitle));
     addLog(`  Batch 3: ${b3.length} items`);
 
     const all = [...b1, ...b2, ...b3];
