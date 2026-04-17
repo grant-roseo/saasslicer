@@ -30,7 +30,7 @@ async function crawlPage(url: string) {
   try {
     const res = await fetch(url, {
       headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; SitemapSlicer/3.0; +https://sitemapslicer.com)",
+        "User-Agent": "Mozilla/5.0 (compatible; SitemapSlicer/3.0; +https://saasslicer.com)",
         "Accept": "text/html,application/xhtml+xml",
         "Accept-Language": "en-US,en;q=0.9",
       },
