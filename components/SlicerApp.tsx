@@ -158,14 +158,37 @@ How confident are you these pages represent the "${cluster.name}" category? 0=wr
 
     setSubPhase("analyze");
 
-    // Build rich per-cluster context including crawled page titles
+    // Build rich per-cluster context: titles + H2s (topic depth) + word counts + dates
     const clusterSummaries = clusters.map(c => {
       const crawled = c.crawledPages.filter(p => p.title || p.h1).slice(0, 6);
-      const sampleLines = crawled.length > 0
-        ? crawled.map(p => `    • ${p.title || p.h1}${p.metaDescription ? " — " + p.metaDescription.slice(0, 90) : ""}`).join("\n")
-        : c.urls.slice(0, 6).map(u => `    • ${u}`).join("\n");
-      return `[${c.name} — ${c.urls.length} pages | crawled: ${crawled.length}]\n${sampleLines}`;
+      if (!crawled.length) {
+        return `[${c.name} — ${c.urls.length} pages | not crawled]\n${c.urls.slice(0, 4).map(u => `    • ${u}`).join("\n")}`;
+      }
+      const pageLines = crawled.map(p => {
+        const heading = p.title || p.h1;
+        const depth = p.wordCount > 1500 ? "deep" : p.wordCount > 600 ? "medium" : "thin";
+        const h2Preview = (p.h2s || []).slice(0, 4).join(" · ");
+        const date = p.publishedDate ? ` [${p.publishedDate.slice(0,7)}]` : "";
+        return `    • ${heading}${date} (${depth}, ~${p.wordCount}w)${h2Preview ? "\n      Topics: " + h2Preview : ""}`;
+      }).join("\n");
+      return `[${c.name} — ${c.urls.length} pages | crawled: ${crawled.length}]\n${pageLines}`;
     }).join("\n\n");
+
+    // Extract integration ecosystem — which tools does this site integrate with?
+    const allIntegrations = clusters
+      .flatMap(c => c.crawledPages.flatMap(p => p.integrationsWith || []))
+      .filter(Boolean);
+    const integrationsEcosystem = [...new Set(allIntegrations)];
+
+    // Content freshness — derive publishing velocity from dates
+    const datedPages = clusters.flatMap(c => c.crawledPages.filter(p => p.publishedDate));
+    const recentPages = datedPages.filter(p => {
+      const d = new Date(p.publishedDate);
+      const sixMonthsAgo = new Date(); sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+      return d > sixMonthsAgo;
+    }).length;
+    const contentDepthProfile = `${datedPages.length} pages with dates found. ${recentPages} published in last 6 months. ` +
+      `Avg word count: ${Math.round(clusters.flatMap(c => c.crawledPages.map(p => p.wordCount || 0)).reduce((a,b) => a+b, 0) / Math.max(1, clusters.reduce((s,c) => s + c.crawledPages.length, 0)))}w.`;
 
     // Infer which SaaS content taxonomy categories are present vs missing
     const presentTypes = new Set(clusters.map(c => c.categoryType));
@@ -188,14 +211,21 @@ Return ONLY valid JSON (no markdown):
       `Analyze this ${site.role.toUpperCase()} site: ${site.name} (${site.domain})
 Total URLs: ${site.urls.length}
 
-CONTENT ARCHITECTURE (what they actually have):
+CONTENT ARCHITECTURE WITH DEPTH SIGNALS:
 ${clusterSummaries}
+
+INTEGRATION ECOSYSTEM (which tools they integrate with):
+${integrationsEcosystem.length ? integrationsEcosystem.join(", ") : "none detected"}
+
+CONTENT DEPTH PROFILE:
+${contentDepthProfile}
 
 CONTENT TAXONOMY GAPS (categories with zero pages):
 ${missingTypes.join(", ")}
 
-For notableGaps be SPECIFIC: name exact verticals, roles, and page types that are absent.
-For strengths be SPECIFIC: mention actual category names and page counts.
+For notableGaps be VERY SPECIFIC: name exact verticals, roles, and page types absent. Use H2 topic data to assess depth gaps too.
+For strengths be SPECIFIC: mention category names, page counts, and content depth where evident.
+For contentVelocitySignal: use the dated pages data to estimate publishing frequency.
 Set: isClient=${site.role === "client"}, siteId="${site.id}", siteName="${site.name}", domain="${site.domain}", totalUrls=${site.urls.length}`,
       3000,
       {
@@ -204,10 +234,16 @@ Set: isClient=${site.role === "client"}, siteId="${site.id}", siteName="${site.n
         clusters, contentStrategySum: "", searchArchitecture: "",
         keyThemes: [], strengths: [], notableGaps: [],
         contentVelocitySignal: "", schemaTypesFound: [],
+        integrationsEcosystem, contentDepthProfile,
       }
     );
 
-    return { ...result, siteId: site.id, siteName: site.name, domain: site.domain, isClient: site.role === "client", totalUrls: site.urls.length, clusters };
+    return {
+      ...result,
+      siteId: site.id, siteName: site.name, domain: site.domain,
+      isClient: site.role === "client", totalUrls: site.urls.length,
+      clusters, integrationsEcosystem, contentDepthProfile,
+    };
   }
 
   // ─── Gap analysis ───────────────────────────────────────────────────────────
@@ -289,7 +325,21 @@ Identify 15-25 gaps. For each gap:
     const allGaps = (gaps.gaps || []).map(g => ({ ...g, priority: (g.priority || "medium").toLowerCase() as typeof g.priority }));
     const topGaps = allGaps.slice(0, 20).map(g => `${g.title}: ${g.opportunity}`).join(" | ");
 
-    addLog(`  Planning from ${allGaps.length} gaps across ${clientAn.clusters.length} categories`);
+    // Build client existing URL paths for deduplication — prevents recommending net_new for existing content
+    const clientExistingPaths = clientAn.clusters
+      .flatMap(c => c.urls.map(u => { try { return new URL(u).pathname; } catch { return u; } }))
+      .filter(p => p && p !== "/")
+      .slice(0, 400); // cap to keep prompt size manageable
+
+    // Also build a human-readable list of what the client already has by category
+    const clientHas = clientAn.clusters
+      .filter(c => c.urls.length > 0)
+      .map(c => {
+        const crawledTitles = c.crawledPages.filter(p => p.title).slice(0, 4).map(p => p.title);
+        return `  ${c.name} (${c.urls.length} pages)${crawledTitles.length ? ": e.g. " + crawledTitles.join(", ") : ""}`;
+      }).join("\n");
+
+    addLog(`  Planning from ${allGaps.length} gaps | Client has ${clientExistingPaths.length} indexed URLs`);
 
     function extractItems(resp: string): ContentItem[] {
       const clean = resp.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
@@ -311,11 +361,14 @@ CLIENT EXISTING CATEGORIES: ${cats}
 ${skip.length ? `SKIP (already in plan): ${skip.slice(0,8).join(", ")}` : ""}
 ANALYST NOTES: ${notes || "None"}
 
-FUNNEL FOCUS FOR THIS BATCH: ${funnelFocus}
+FUNNEL FOCUS FOR THIS BATCH:
+${funnelFocus}
+
+DEDUPLICATION RULE: Before setting action="net_new", check if the client's existing URLs above already contain a similar page. If a similar path exists → set action="refresh". If content exists but in wrong format → set action="repurpose".
+
 Start priority numbering at ${startAt}.
-icpIds: short role strings like "vp_legal", "procurement_manager", "in_house_counsel", "compliance_officer", "sales_ops"
-action: "net_new" for missing pages, "refresh" for existing pages needing update, "repurpose" for content format changes
-problemsSolved: 2-3 specific problems this page addresses
+icpIds: short role strings like "vp_legal", "procurement_manager", "in_house_counsel", "compliance_officer", "sales_ops", "cfo", "it_security", "contract_manager"
+problemsSolved: 2-3 specific problems this page addresses, in buyer language
 
 Return ONLY: {"items":[${SCHEMA}]}`,
           1800
@@ -334,8 +387,12 @@ Return ONLY: {"items":[${SCHEMA}]}`,
     addLog("  Batch A: TOFU awareness & education pages…");
     const bA = await planBatch(
       "Batch A",
-      "TOFU awareness content: educational guides, blog series, resource pages, glossary pages, industry trend reports, explainer content",
-      "TOFU (informational): target early-stage buyers researching the problem, not yet solution-aware. Mix of blog posts, guides, calculators, templates.",
+      "TOFU awareness content: educational guides, blog series, resource pages, glossary pages, industry trend reports, explainer content, how-to articles, category education",
+      `TOFU (informational): target early-stage buyers researching the problem. Mix of blog posts, guides, calculators, templates.
+CLIENT EXISTING URLS (sample — mark similar pages as refresh not net_new):
+${clientExistingPaths.slice(0, 150).join("\n")}
+CLIENT CURRENTLY HAS:
+${clientHas}`,
       1,
       []
     );
@@ -344,8 +401,12 @@ Return ONLY: {"items":[${SCHEMA}]}`,
     addLog("  Batch B: MOFU solution & vertical pages…");
     const bB = await planBatch(
       "Batch B",
-      "MOFU consideration content: industry vertical pages, role/persona pages, solution pages, use-case pages, integration pages, benefit pages",
-      "MOFU (commercial): target buyers evaluating solutions. Prioritise missing industry verticals (construction, finance, life sciences, etc), role pages (VP Legal, Procurement, etc), and solution/use-case pages.",
+      "MOFU consideration content: industry vertical pages, role/persona pages, solution pages, use-case pages, integration pages, benefit/value pages",
+      `MOFU (commercial): target buyers evaluating solutions. Prioritise missing industry verticals, role pages, and solution/use-case pages.
+CLIENT EXISTING URLS (sample — mark similar pages as refresh not net_new):
+${clientExistingPaths.slice(0, 150).join("\n")}
+CLIENT CURRENTLY HAS:
+${clientHas}`,
       bA.length + 1,
       bA.slice(0,6).map(i => i.pageTitle)
     );
@@ -355,7 +416,11 @@ Return ONLY: {"items":[${SCHEMA}]}`,
     const bC = await planBatch(
       "Batch C",
       "BOFU conversion content: comparison pages (vs competitors), case studies, ROI calculators, demo landing pages, customer success stories, security/trust pages",
-      "BOFU (transactional): target buyers ready to decide. Prioritise comparison pages, customer proof content, and conversion pages.",
+      `BOFU (transactional): target buyers ready to decide. Prioritise comparison pages, customer proof, and conversion pages.
+CLIENT EXISTING URLS (sample — mark similar pages as refresh not net_new):
+${clientExistingPaths.slice(0, 100).join("\n")}
+CLIENT CURRENTLY HAS:
+${clientHas}`,
       bA.length + bB.length + 1,
       [...bA,...bB].slice(0,8).map(i => i.pageTitle)
     );
@@ -390,14 +455,58 @@ Return ONLY: {"items":[${SCHEMA}]}`,
       "gapScore":80
     }`;
 
-    // Build richer context from crawled page data
+    // Build richer context: crawled pages + integrations + reviews
     const clientCats = clientAn.clusters.map(c => `${c.name}(${c.urls.length})`).join(", ");
+
+    // Fetch G2/Capterra reviews for each competitor (ICP language goldmine)
+    addLog("  Fetching buyer reviews from G2/Capterra…");
+    const reviewMap: Record<string, string> = {};
+    for (const comp of [...compAns, clientAn]) {
+      try {
+        const r = await fetch("/api/reviews", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productName: comp.siteName, domain: comp.domain }),
+        });
+        const data = await r.json();
+        if (data.found && data.reviewSnippets?.length) {
+          reviewMap[comp.siteName] = `${data.reviewSnippets.slice(0, 12).join(" ||| ")}`;
+          addLog(`  ✓ ${comp.siteName}: ${data.reviewSnippets.length} reviews from ${data.source}`, "success");
+        } else {
+          addLog(`  ${comp.siteName}: no reviews found (G2/Capterra)`, "info");
+        }
+      } catch { addLog(`  ${comp.siteName}: review fetch failed`, "warn"); }
+    }
+
     const compDetails = compAns.map(c => {
       const cats = c.clusters.map(cl => `${cl.name}(${cl.urls.length})`).join(", ");
-      const rolePages = c.clusters.filter(cl => cl.categoryType === "who_we_serve").flatMap(cl => cl.crawledPages.filter(p => p.title).slice(0,4).map(p => p.title));
-      const vertPages = c.clusters.filter(cl => cl.categoryType === "industry_vertical").flatMap(cl => cl.crawledPages.filter(p => p.title).slice(0,4).map(p => p.title));
-      return `${c.siteName}:\n  Categories: ${cats}\n  Role pages: ${rolePages.slice(0,4).join("; ") || "none found"}\n  Vertical pages: ${vertPages.slice(0,4).join("; ") || "none found"}\n  Strategy: ${c.contentStrategySum}`;
+      const rolePages = c.clusters.filter(cl => cl.categoryType === "who_we_serve")
+        .flatMap(cl => cl.crawledPages.filter(p => p.title).slice(0,6).map(p => {
+          const h2s = (p.h2s || []).slice(0,3).join(", ");
+          return p.title + (h2s ? ` [topics: ${h2s}]` : "");
+        }));
+      const vertPages = c.clusters.filter(cl => cl.categoryType === "industry_vertical")
+        .flatMap(cl => cl.crawledPages.filter(p => p.title).slice(0,6).map(p => {
+          const h2s = (p.h2s || []).slice(0,3).join(", ");
+          return p.title + (h2s ? ` [topics: ${h2s}]` : "");
+        }));
+      const compPages = c.clusters.filter(cl => cl.categoryType === "comparison")
+        .flatMap(cl => cl.crawledPages.filter(p => p.title).slice(0,4).map(p => p.title));
+      const integrations = (c.integrationsEcosystem || []).slice(0, 10).join(", ");
+      const reviews = reviewMap[c.siteName] || "";
+      return `${c.siteName}:
+  Categories: ${cats}
+  Strategy: ${c.contentStrategySum}
+  Integrations: ${integrations || "none detected"} → indicates tech stack / buyer environment
+  Role/Persona pages: ${rolePages.slice(0,6).join(" | ") || "none found"}
+  Vertical pages: ${vertPages.slice(0,6).join(" | ") || "none found"}
+  Comparison pages: ${compPages.slice(0,4).join(" | ") || "none"}
+  Buyer reviews (real language): ${reviews || "not available"}`;
     }).join("\n\n");
+
+    // Client context including integrations
+    const clientIntegrations = (clientAn.integrationsEcosystem || []).join(", ");
+    const clientReviews = reviewMap[clientAn.siteName] || "";
 
     async function icpBatch(batchNum: number, existingNames: string[]): Promise<ICP[]> {
       const skip = existingNames.length ? `\nSKIP ICPs already defined: ${existingNames.join(", ")}` : "";
@@ -412,8 +521,10 @@ Scoring: clientCoverageScore=how well client serves them now (0=not at all, 100=
 What client currently has: ${clientCats}
 Client strengths: ${clientAn.strengths.join("; ")}
 Client content gaps: ${clientAn.notableGaps.join("; ")}
+Client integrations: ${clientIntegrations || "none detected"}
+Client buyer reviews: ${clientReviews || "not available"}
 
-COMPETITOR CONTENT ANALYSIS:
+COMPETITOR CONTENT ANALYSIS (with buyer review language):
 ${compDetails}
 
 KEY CONTENT GAPS IDENTIFIED:
@@ -423,8 +534,17 @@ ANALYST NOTES: ${notes || "None"}
 ${skip}
 
 Generate ${batchNum === 1 ? "the 8-10 most important" : "8-10 additional distinct"} ICPs.
-For each ICP provide: realistic search queries they would use (4+), AI prompts they would ask ChatGPT/Claude (3+), specific content needs at each funnel stage, and exact pain points.
-Focus on role × industry combinations visible in competitor content that are absent or weak in the client's content.`,
+
+CRITICAL: If buyer reviews are available above, use the EXACT language from those reviews for pain points — not generic descriptions. "Legal is a bottleneck that kills deals" is better than "contract review efficiency".
+
+For each ICP provide:
+- primaryPains: use buyer review language where available — 3+ specific pains in their own words
+- searchQueries: 4-6 queries they would actually type into Google (long-tail, specific)
+- aiPrompts: 3-4 prompts they would ask Claude/ChatGPT/Gemini (conversational, problem-framed)
+- tofuContentNeeds / mofuContentNeeds / bofuContentNeeds: specific content formats + topics
+- Integration context: if competitor integrates with Salesforce/HubSpot → their ICPs are in sales-led orgs
+
+Focus on role × industry combinations clearly visible in competitor content or reviews that are absent from client's content.`,
           2500,
           { icps: [] }
         );
