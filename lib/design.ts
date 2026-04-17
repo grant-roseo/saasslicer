@@ -1,14 +1,15 @@
-// ─── Design Tokens — Slicer family warm cream/amber ──────────────────────────
+// ─── Design Tokens — SaaS Slicer pale green ───────────────────────────────────
 export const T = {
-  bg:           "#FEFCE8",
+  bg:           "#F0FDF4",   // pale green page background
   surface:      "#FFFFFF",
   card:         "#FFFFFF",
-  border:       "#E8E2CE",
-  borderLight:  "#F0EAD8",
-  accent:       "#D97706",
-  accentDark:   "#B45309",
-  accentBg:     "#FEF3C7",
-  accentText:   "#92400E",
+  border:       "#D1FAE5",   // green-tinted border
+  borderLight:  "#ECFDF5",   // very soft green border
+  accent:       "#16A34A",   // green-600
+  accentDark:   "#14532D",   // green-900
+  accentMid:    "#15803D",   // green-700
+  accentBg:     "#DCFCE7",   // green-100
+  accentText:   "#15803D",   // green-700
   text:         "#1C1917",
   muted:        "#78716C",
   dim:          "#A8A29E",
@@ -18,7 +19,7 @@ export const T = {
   error:        "#DC2626",
   errorBg:      "#FEF2F2",
   errorBdr:     "#FECACA",
-  warn:         "#D97706",
+  warn:         "#D97706",   // keep amber — semantic warning colour
   warnBg:       "#FFFBEB",
   warnBdr:      "#FDE68A",
   info:         "#2563EB",
@@ -34,36 +35,36 @@ export const T = {
   // Semantic maps
   priority: {
     critical: "#DC2626",
-    high:     "#D97706",
+    high:     "#D97706",   // amber stays — semantic priority signal
     medium:   "#2563EB",
     low:      "#6B7280",
   },
   funnel: {
     TOFU:  "#059669",
-    MOFU:  "#D97706",
+    MOFU:  "#2563EB",      // blue for mid-funnel (was amber — freed for warnings only)
     BOFU:  "#DC2626",
     Mixed: "#7C3AED",
   },
   action: {
-    net_new:   "#059669",
-    refresh:   "#2563EB",
-    repurpose: "#D97706",
+    net_new:   "#16A34A",  // green — new content
+    refresh:   "#2563EB",  // blue — updating existing
+    repurpose: "#D97706",  // amber — format change
   },
   provider: {
-    anthropic: "#D97706",
+    anthropic: "#16A34A",  // green — matches SaaS Slicer brand
     openai:    "#10a37f",
     gemini:    "#4285f4",
   },
   category: {
     blog:              "#2563EB",
-    product_service:   "#D97706",
+    product_service:   "#16A34A",
     industry_vertical: "#7C3AED",
     solution:          "#059669",
     who_we_serve:      "#0D9488",
     use_case:          "#DC2626",
     comparison:        "#6B7280",
     resource_guide:    "#2563EB",
-    case_study:        "#D97706",
+    case_study:        "#16A34A",
     pricing:           "#059669",
     landing_page:      "#7C3AED",
     docs_support:      "#6B7280",
@@ -120,10 +121,10 @@ export function btn(
   };
   const variants: Record<string, React.CSSProperties> = {
     primary: { background: T.accent,    color: "#fff" },
-    ghost:   { background: "transparent", color: T.muted,   border: "1px solid " + T.border },
-    success: { background: T.successBg, color: T.success,   border: "1px solid " + T.successBdr },
-    danger:  { background: T.errorBg,   color: T.error,     border: "1px solid " + T.errorBdr },
-    default: { background: T.surface,   color: T.text,      border: "1px solid " + T.border },
+    ghost:   { background: "transparent", color: T.muted, border: "1px solid " + T.border },
+    success: { background: T.successBg, color: T.success, border: "1px solid " + T.successBdr },
+    danger:  { background: T.errorBg,   color: T.error,   border: "1px solid " + T.errorBdr },
+    default: { background: T.surface,   color: T.text,    border: "1px solid " + T.border },
   };
   return { ...base, ...variants[variant], ...extra };
 }
