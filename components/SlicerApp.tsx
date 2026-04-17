@@ -158,36 +158,45 @@ How confident are you these pages represent the "${cluster.name}" category? 0=wr
 
     setSubPhase("analyze");
 
-    // Build enriched context for Claude
+    // Build rich per-cluster context including crawled page titles
     const clusterSummaries = clusters.map(c => {
-      const samplePages = c.crawledPages.filter(p => p.title || p.h1).slice(0, 5);
-      const pageDetails = samplePages.length > 0
-        ? samplePages.map(p => `    • ${p.title || p.h1} — ${p.metaDescription?.slice(0,80) || "no meta"}`).join("\n")
-        : c.urls.slice(0, 5).map(u => `    • ${u}`).join("\n");
-      return `[${c.name} — ${c.urls.length} pages, priority: ${c.priority}]\n${pageDetails}`;
+      const crawled = c.crawledPages.filter(p => p.title || p.h1).slice(0, 6);
+      const sampleLines = crawled.length > 0
+        ? crawled.map(p => `    • ${p.title || p.h1}${p.metaDescription ? " — " + p.metaDescription.slice(0, 90) : ""}`).join("\n")
+        : c.urls.slice(0, 6).map(u => `    • ${u}`).join("\n");
+      return `[${c.name} — ${c.urls.length} pages | crawled: ${crawled.length}]\n${sampleLines}`;
     }).join("\n\n");
 
+    // Infer which SaaS content taxonomy categories are present vs missing
+    const presentTypes = new Set(clusters.map(c => c.categoryType));
+    const allTypes = ["industry_vertical","who_we_serve","comparison","case_study","solution","product_service","resource_guide","landing_page","pricing"];
+    const missingTypes = allTypes.filter(t => !presentTypes.has(t as any));
+
     const result = await callAIJson<SiteAnalysis>(
-      `You are an expert SEO and content strategist. Analyze a site's content strategy from URL patterns and page metadata.
-Return ONLY valid JSON matching this shape exactly (no markdown):
+      `You are an expert SaaS content strategist. Analyze this site's content architecture from URL patterns and page metadata.
+Return ONLY valid JSON (no markdown):
 {
   "siteId":"","siteName":"","domain":"","isClient":false,"totalUrls":0,"clusters":[],
-  "contentStrategySum":"2-3 sentence summary",
-  "searchArchitecture":"how they structure content for search",
-  "keyThemes":["theme1","theme2"],
-  "strengths":["strength1","strength2","strength3"],
-  "notableGaps":["gap1","gap2"],
-  "contentVelocitySignal":"publishing cadence inference",
+  "contentStrategySum":"2-3 sentences on overall content strategy approach",
+  "searchArchitecture":"describe how they structure content for organic search — verticals, roles, use cases etc",
+  "keyThemes":["theme1","theme2","theme3"],
+  "strengths":["specific strength 1","specific strength 2","specific strength 3","specific strength 4"],
+  "notableGaps":["specific missing content type 1","specific missing vertical 2","specific missing role page 3","specific missing content type 4"],
+  "contentVelocitySignal":"estimate publishing frequency from blog/resource page count",
   "schemaTypesFound":[]
 }`,
       `Analyze this ${site.role.toUpperCase()} site: ${site.name} (${site.domain})
 Total URLs: ${site.urls.length}
 
-CONTENT CLUSTERS WITH PAGE METADATA:
+CONTENT ARCHITECTURE (what they actually have):
 ${clusterSummaries}
 
-Identify the site's content strategy, architecture, strengths and gaps. Set isClient=${site.role === "client"}, siteId="${site.id}", siteName="${site.name}", domain="${site.domain}", totalUrls=${site.urls.length}.
-Include the clusters array with the category types you've identified.`,
+CONTENT TAXONOMY GAPS (categories with zero pages):
+${missingTypes.join(", ")}
+
+For notableGaps be SPECIFIC: name exact verticals, roles, and page types that are absent.
+For strengths be SPECIFIC: mention actual category names and page counts.
+Set: isClient=${site.role === "client"}, siteId="${site.id}", siteName="${site.name}", domain="${site.domain}", totalUrls=${site.urls.length}`,
       3000,
       {
         siteId: site.id, siteName: site.name, domain: site.domain,
@@ -206,73 +215,114 @@ Include the clusters array with the category types you've identified.`,
     clientAn: SiteAnalysis,
     compAns: SiteAnalysis[]
   ): Promise<GapAnalysis> {
+
+    // Build a detailed content inventory for each site
+    function siteInventory(an: SiteAnalysis) {
+      return an.clusters.map(c => {
+        const sample = c.crawledPages.filter(p => p.title).slice(0, 4).map(p => p.title).join("; ");
+        return `  ${c.name}: ${c.urls.length} pages${sample ? " | e.g. " + sample : ""}`;
+      }).join("\n");
+    }
+
+    const clientInventory = siteInventory(clientAn);
+    const compInventories = compAns.map(c => `${c.siteName} (${c.totalUrls} URLs):\n${siteInventory(c)}`).join("\n\n");
+
+    // Identify which taxonomy categories each competitor has that client is missing
+    const clientTypes = new Set(clientAn.clusters.map(c => c.categoryType));
+    const compTypeMap: Record<string, string[]> = {};
+    for (const comp of compAns) {
+      for (const cl of comp.clusters) {
+        if (!clientTypes.has(cl.categoryType) && cl.urls.length > 2) {
+          compTypeMap[cl.name] = compTypeMap[cl.name] || [];
+          if (!compTypeMap[cl.name].includes(comp.siteName)) compTypeMap[cl.name].push(comp.siteName);
+        }
+      }
+    }
+    const missingCats = Object.entries(compTypeMap).map(([cat, comps]) => `  ${cat}: ${comps.join(", ")}`).join("\n");
+
     return callAIJson<GapAnalysis>(
-      `You are a senior SEO strategist. Return ONLY valid JSON:
-{"narrative":"string","competitorStrengths":[{"competitor":"","advantage":""}],"clientAdvantages":[""],"gaps":[{"id":"g1","title":"","gapType":"content_category","description":"","priority":"high","opportunity":"","reasoning":"","estimatedPages":0,"funnelStage":"TOFU","competitorsDoing":[],"icpRelevance":[]}]}`,
-      `CLIENT: ${clientAn.siteName}
-Categories: ${clientAn.clusters.map(c => `${c.name}(${c.urls.length})`).join(", ")}
-Strengths: ${clientAn.strengths.join("; ")}
-Gaps: ${clientAn.notableGaps.join("; ")}
+      `You are a senior B2B SaaS content strategist. Identify every significant content gap the client has vs competitors.
+Return ONLY valid JSON:
+{"narrative":"3-4 sentence strategic summary","competitorStrengths":[{"competitor":"","advantage":""}],"clientAdvantages":[""],"gaps":[{"id":"g1","title":"","gapType":"content_category","description":"","priority":"critical|high|medium|low","opportunity":"","reasoning":"","estimatedPages":0,"funnelStage":"TOFU|MOFU|BOFU","competitorsDoing":[],"icpRelevance":[]}]}
+Priority guide: critical=major category with 0 client pages, high=underdeveloped vs competitors, medium=behind on depth/breadth, low=nice to have.
+Target 15-25 gaps across these types: industry verticals, role/persona pages, comparison/alternative pages, customer proof, solution/use-case pages, resource gaps, conversion pages.`,
+      `CLIENT SITE: ${clientAn.siteName} (${clientAn.totalUrls} URLs)
+Content strategy: ${clientAn.contentStrategySum}
+Search architecture: ${clientAn.searchArchitecture}
 
-COMPETITORS:
-${compAns.map(c => `${c.siteName}: ${c.clusters.map(cl => `${cl.name}(${cl.urls.length})`).join(", ")}\nStrengths: ${c.strengths.join("; ")}`).join("\n\n")}
+WHAT CLIENT HAS:
+${clientInventory}
 
-Identify ALL significant content gaps. For icpRelevance, use ICP role/industry hints like "VP Legal", "Marketing Manager", "SMB Owner". Keep descriptions under 25 words, opportunities under 20 words.`,
-      2000,
+CLIENT STRENGTHS: ${clientAn.strengths.join(" | ")}
+CLIENT NOTABLE GAPS: ${clientAn.notableGaps.join(" | ")}
+
+COMPETITOR SITES:
+${compInventories}
+
+CONTENT CATEGORIES COMPETITORS HAVE THAT CLIENT IS MISSING:
+${missingCats || "  (analyse the inventories above to identify gaps)"}
+
+ANALYST NOTES: ${notesRef.current || "None"}
+
+Identify 15-25 gaps. For each gap:
+- title: specific page type (e.g. "Construction Industry Landing Page", "VP Legal Role Page", "vs Competitor X")
+- icpRelevance: specific roles affected (e.g. ["VP Legal", "Procurement Manager", "In-House Counsel"])
+- Keep descriptions under 20 words, opportunities under 15 words
+- Be specific about WHICH verticals, roles, and page types are missing`,
+      3000,
       { narrative: "", competitorStrengths: [], clientAdvantages: [], gaps: [] }
     );
   }
 
-  // ─── Content plan (3 batches × 1800 tokens) ─────────────────────────────────
+  // ─── Content plan — 3 funnel-stage batches ───────────────────────────────────
+  // Batch A = TOFU (awareness/education), B = MOFU (solution/vertical/role), C = BOFU (conversion/proof)
+  // Each batch 1800 tokens — safe under Vercel 60s limit even via proxy
   async function generatePlan(
     clientAn: SiteAnalysis,
     gaps: GapAnalysis,
     notes: string
   ): Promise<ContentItem[]> {
-    // Lean system prompt — schema moved to user message to save system token space
-    const SYS = `You are a senior content strategist. Return ONLY valid JSON with no markdown fences. Keep page titles under 8 words and coreAngle under 15 words.`;
+    const SYS = `You are a senior B2B SaaS content strategist. Return ONLY valid JSON, no markdown fences.`;
     const SCHEMA = `{"priority":1,"pageTitle":"","urlSuggestion":"/path","contentType":"","targetQuery":"","funnelStage":"TOFU","intent":"informational","coreAngle":"","action":"net_new","reasoning":"","gapAddressed":"","estimatedEffort":"medium","wordCountTarget":1200,"icpIds":[],"problemsSolved":[]}`;
-    const cats = clientAn.clusters.map(c => c.name).join(", ");
 
-    // Normalise priority to lowercase so filter works regardless of what the AI returns
+    const cats = clientAn.clusters.map(c => `${c.name}(${c.urls.length})`).join(", ");
     const allGaps = (gaps.gaps || []).map(g => ({ ...g, priority: (g.priority || "medium").toLowerCase() as typeof g.priority }));
-    const critical = allGaps.filter(g => g.priority === "critical");
-    const high     = allGaps.filter(g => g.priority === "high");
-    const other    = allGaps.filter(g => g.priority === "medium" || g.priority === "low" || (g.priority !== "critical" && g.priority !== "high"));
-    addLog(`  Gaps breakdown — critical:${critical.length} high:${high.length} other:${other.length} (${allGaps.length} total)`);
-    // Safety net: if all buckets empty but we have gaps, put everything in "other"
-    const effectiveOther = (!critical.length && !high.length && !other.length && allGaps.length) ? allGaps : other;
+    const topGaps = allGaps.slice(0, 20).map(g => `${g.title}: ${g.opportunity}`).join(" | ");
+
+    addLog(`  Planning from ${allGaps.length} gaps across ${clientAn.clusters.length} categories`);
 
     function extractItems(resp: string): ContentItem[] {
       const clean = resp.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      // Try direct parse
       try { const p = JSON.parse(clean); return p.items || p || []; } catch {}
-      // Try extracting {...}
       const obj = clean.match(/\{[\s\S]+\}/);
       if (obj) { try { const p = JSON.parse(obj[0]); return p.items || []; } catch {} }
-      // Try extracting [...]
       const arr = clean.match(/\[[\s\S]+\]/);
       if (arr) { try { return JSON.parse(arr[0]); } catch {} }
       return [];
     }
 
-    async function batch(label: string, batchGaps: typeof gaps.gaps, startAt: number, skip: string[]): Promise<ContentItem[]> {
-      if (!batchGaps.length) return [];
+    async function planBatch(label: string, focus: string, funnelFocus: string, startAt: number, skip: string[]): Promise<ContentItem[]> {
       try {
         const resp = await callAI(SYS,
-          `Generate 8-10 content plan items for these gaps.
-GAPS: ${batchGaps.slice(0, 6).map(g => `${g.title}: ${g.opportunity}`).join(" | ")}
-CLIENT CATEGORIES: ${cats}
-${skip.length ? `SKIP (already covered): ${skip.join(", ")}` : ""}
-NOTES: ${notes || "None"}
+          `Generate 12-15 content plan items. Focus: ${focus}
+
+CONTENT GAPS TO ADDRESS: ${topGaps}
+CLIENT EXISTING CATEGORIES: ${cats}
+${skip.length ? `SKIP (already in plan): ${skip.slice(0,8).join(", ")}` : ""}
+ANALYST NOTES: ${notes || "None"}
+
+FUNNEL FOCUS FOR THIS BATCH: ${funnelFocus}
 Start priority numbering at ${startAt}.
-icpIds should be short strings like "vp_legal", "marketing_manager", "smb_owner".
-Return ONLY this JSON structure, no commentary:
-{"items":[${SCHEMA}]}`,
+icpIds: short role strings like "vp_legal", "procurement_manager", "in_house_counsel", "compliance_officer", "sales_ops"
+action: "net_new" for missing pages, "refresh" for existing pages needing update, "repurpose" for content format changes
+problemsSolved: 2-3 specific problems this page addresses
+
+Return ONLY: {"items":[${SCHEMA}]}`,
           1800
         );
         const items = extractItems(resp);
-        if (!items.length) addLog(`  ⚠ ${label}: response parsed but returned 0 items`, "warn");
+        addLog(`  ${label}: ${items.length} items`, items.length > 0 ? "success" : "warn");
+        if (!items.length) addLog(`  ⚠ ${label}: 0 items returned — response: ${resp.slice(0,200)}`, "warn");
         return items;
       } catch (e: any) {
         addLog(`  ⚠ ${label} failed: ${e.message}`, "warn");
@@ -280,20 +330,39 @@ Return ONLY this JSON structure, no commentary:
       }
     }
 
-    addLog("  Batch 1: critical gaps…");
-    const b1 = await batch("Batch 1", critical, 1, []);
-    addLog(`  Batch 1: ${b1.length} items`);
+    // Batch A: TOFU — awareness, education, thought leadership
+    addLog("  Batch A: TOFU awareness & education pages…");
+    const bA = await planBatch(
+      "Batch A",
+      "TOFU awareness content: educational guides, blog series, resource pages, glossary pages, industry trend reports, explainer content",
+      "TOFU (informational): target early-stage buyers researching the problem, not yet solution-aware. Mix of blog posts, guides, calculators, templates.",
+      1,
+      []
+    );
 
-    addLog("  Batch 2: high-priority gaps…");
-    const b2 = await batch("Batch 2", high, b1.length + 1, b1.slice(0,6).map(i => i.pageTitle));
-    addLog(`  Batch 2: ${b2.length} items`);
+    // Batch B: MOFU — solution, vertical, role, use-case pages
+    addLog("  Batch B: MOFU solution & vertical pages…");
+    const bB = await planBatch(
+      "Batch B",
+      "MOFU consideration content: industry vertical pages, role/persona pages, solution pages, use-case pages, integration pages, benefit pages",
+      "MOFU (commercial): target buyers evaluating solutions. Prioritise missing industry verticals (construction, finance, life sciences, etc), role pages (VP Legal, Procurement, etc), and solution/use-case pages.",
+      bA.length + 1,
+      bA.slice(0,6).map(i => i.pageTitle)
+    );
 
-    addLog("  Batch 3: medium/low gaps…");
-    const b3 = await batch("Batch 3", effectiveOther, b1.length + b2.length + 1, [...b1,...b2].slice(0,6).map(i => i.pageTitle));
-    addLog(`  Batch 3: ${b3.length} items`);
+    // Batch C: BOFU — comparison, proof, conversion pages
+    addLog("  Batch C: BOFU conversion & proof pages…");
+    const bC = await planBatch(
+      "Batch C",
+      "BOFU conversion content: comparison pages (vs competitors), case studies, ROI calculators, demo landing pages, customer success stories, security/trust pages",
+      "BOFU (transactional): target buyers ready to decide. Prioritise comparison pages, customer proof content, and conversion pages.",
+      bA.length + bB.length + 1,
+      [...bA,...bB].slice(0,8).map(i => i.pageTitle)
+    );
 
-    const all = [...b1, ...b2, ...b3];
-    if (!all.length) throw new Error("Content plan returned no items. Check that NEXT_PUBLIC_ANTHROPIC_API_KEY is set in Vercel env vars, then retry.");
+    const all = [...bA, ...bB, ...bC];
+    if (!all.length) throw new Error("Content plan returned no items. Ensure NEXT_PUBLIC_ANTHROPIC_API_KEY is set in Vercel env vars, then retry.");
+    addLog(`  Total: ${all.length} items (${bA.length} TOFU + ${bB.length} MOFU + ${bC.length} BOFU)`);
     return all.map((item, idx) => ({ ...item, priority: idx + 1 }));
   }
 
@@ -321,42 +390,60 @@ Return ONLY this JSON structure, no commentary:
       "gapScore":80
     }`;
 
-    // Two calls: first 10 ICPs, then up to 10 more
+    // Build richer context from crawled page data
+    const clientCats = clientAn.clusters.map(c => `${c.name}(${c.urls.length})`).join(", ");
+    const compDetails = compAns.map(c => {
+      const cats = c.clusters.map(cl => `${cl.name}(${cl.urls.length})`).join(", ");
+      const rolePages = c.clusters.filter(cl => cl.categoryType === "who_we_serve").flatMap(cl => cl.crawledPages.filter(p => p.title).slice(0,4).map(p => p.title));
+      const vertPages = c.clusters.filter(cl => cl.categoryType === "industry_vertical").flatMap(cl => cl.crawledPages.filter(p => p.title).slice(0,4).map(p => p.title));
+      return `${c.siteName}:\n  Categories: ${cats}\n  Role pages: ${rolePages.slice(0,4).join("; ") || "none found"}\n  Vertical pages: ${vertPages.slice(0,4).join("; ") || "none found"}\n  Strategy: ${c.contentStrategySum}`;
+    }).join("\n\n");
+
     async function icpBatch(batchNum: number, existingNames: string[]): Promise<ICP[]> {
-      const skip = existingNames.length ? `\nSKIP (already defined): ${existingNames.join(", ")}` : "";
-      return callAIJson<{ icps: ICP[] }>(
-        `You are a B2B content strategist and customer research expert.
-Identify distinct ICPs (Ideal Customer Profiles) that competitor sites are serving but the client is missing or underserving.
+      const skip = existingNames.length ? `\nSKIP ICPs already defined: ${existingNames.join(", ")}` : "";
+      try {
+        const result = await callAIJson<{ icps: ICP[] }>(
+          `You are a B2B SaaS content strategist and ICP researcher.
+Identify DISTINCT Ideal Customer Profiles (ICPs) that competitor sites are clearly serving that the client is missing or underserving.
+Each ICP must have a unique role+industry combination.
 Return ONLY valid JSON: {"icps":[${ICP_SCHEMA}]}
-Generate 8-10 DISTINCT ICPs. Each must have a unique role+industry combination.
-Scoring: clientCoverageScore=how well client currently serves them (0-100), priorityScore=strategic importance (0-100), gapScore=size of content gap (0-100).`,
-        `CLIENT: ${clientAn.siteName}
-Client categories: ${clientAn.clusters.map(c => c.name).join(", ")}
+Scoring: clientCoverageScore=how well client serves them now (0=not at all, 100=fully), priorityScore=strategic business value (0-100), gapScore=content gap size (0-100).`,
+          `CLIENT: ${clientAn.siteName}
+What client currently has: ${clientCats}
 Client strengths: ${clientAn.strengths.join("; ")}
-Client gaps: ${clientAn.notableGaps.join("; ")}
+Client content gaps: ${clientAn.notableGaps.join("; ")}
 
-COMPETITORS AND THEIR CONTENT FOCUS:
-${compAns.map(c => `${c.siteName}: ${c.clusters.map(cl => `${cl.name}(${cl.urls.length})`).join(", ")} | ${c.searchArchitecture}`).join("\n")}
+COMPETITOR CONTENT ANALYSIS:
+${compDetails}
 
-TOP CONTENT GAPS:
-${gaps.gaps.slice(0, 10).map(g => `- ${g.title} [${g.priority}]: ${g.opportunity}`).join("\n")}
+KEY CONTENT GAPS IDENTIFIED:
+${gaps.gaps.slice(0, 12).map(g => `- ${g.title} [${g.priority}] → ${g.opportunity} | Affects: ${(g.icpRelevance||[]).join(", ")}`).join("\n")}
 
 ANALYST NOTES: ${notes || "None"}
 ${skip}
 
-Identify ${batchNum === 1 ? "the first 8-10 most important" : "8-10 more distinct"} ICPs these competitors are clearly targeting that the client should also be serving. Focus on: industry × role combinations, specific pain points, actual search queries and AI prompts they would use.`,
-        2500,
-        { icps: [] }
-      ).then(r => r.icps || []);
+Generate ${batchNum === 1 ? "the 8-10 most important" : "8-10 additional distinct"} ICPs.
+For each ICP provide: realistic search queries they would use (4+), AI prompts they would ask ChatGPT/Claude (3+), specific content needs at each funnel stage, and exact pain points.
+Focus on role × industry combinations visible in competitor content that are absent or weak in the client's content.`,
+          2500,
+          { icps: [] }
+        );
+        const icps = result.icps || [];
+        if (!icps.length) addLog(`  ⚠ ICP batch ${batchNum} returned 0 ICPs`, "warn");
+        return icps;
+      } catch (e: any) {
+        addLog(`  ⚠ ICP batch ${batchNum} failed: ${e.message}`, "warn");
+        return [];
+      }
     }
 
-    addLog("  Generating ICP batch 1 (up to 10 ICPs)…");
+    addLog("  ICP batch 1: identifying primary ICPs from competitor content…");
     const batch1 = await icpBatch(1, []);
-    addLog(`  ${batch1.length} ICPs identified`, "success");
+    addLog(`  Batch 1: ${batch1.length} ICPs identified`, batch1.length > 0 ? "success" : "warn");
 
-    addLog("  Generating ICP batch 2 (additional ICPs)…");
+    addLog("  ICP batch 2: identifying additional ICPs…");
     const batch2 = await icpBatch(2, batch1.map(i => i.name));
-    addLog(`  ${batch2.length} additional ICPs identified`, "success");
+    addLog(`  Batch 2: ${batch2.length} additional ICPs`, batch2.length > 0 ? "success" : "info");
 
     const allICPs = [...batch1, ...batch2]
       .slice(0, 20)
