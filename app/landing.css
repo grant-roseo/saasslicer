@@ -102,8 +102,8 @@
 .l-btn-primary:hover { background: var(--green-mid); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(22,163,74,.3); }
 .l-btn-outline { background: transparent; color: var(--lt-mid); border: 1.5px solid var(--lc-border); }
 .l-btn-outline:hover { background: var(--lc); }
-.l-btn-dark { background: var(--lt); color: white; }
-.l-btn-dark:hover { background: #2c2825; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.2); }
+.l-btn-dark { background: var(--green-dark); color: white; }
+.l-btn-dark:hover { background: var(--green-mid); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(22,163,74,0.3); }
 .l-btn-lg { padding: 13px 28px; font-size: 15px; border-radius: 10px; }
 
 /* Hero */
@@ -250,15 +250,24 @@
 /* Outputs */
 .l-outputs { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
 .l-output {
-  background: var(--lt); border-radius: 16px; padding: 24px; color: white;
+  background: white;
+  border: 1.5px solid var(--lc-border);
+  border-top: 4px solid var(--green);
+  border-radius: 16px; padding: 24px;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.l-output:hover {
+  border-color: var(--green); border-top-color: var(--green-mid);
+  box-shadow: 0 4px 16px rgba(22,163,74,0.1); transform: translateY(-2px);
 }
 .l-output-icon { font-size: 28px; margin-bottom: 12px; }
-.l-output h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; }
-.l-output p { font-size: 13px; color: #a8a29e; line-height: 1.65; }
+.l-output h3 { font-size: 15px; font-weight: 700; margin-bottom: 8px; color: var(--lt); }
+.l-output p { font-size: 13.5px; color: var(--lt-muted); line-height: 1.65; }
 .l-output-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 14px; }
 .l-output-tag {
   font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px;
-  padding: 3px 8px; border-radius: 4px; background: rgba(255,255,255,.08); color: #d6d3d1;
+  padding: 3px 8px; border-radius: 4px;
+  background: var(--green-light); color: var(--green-mid);
 }
 
 /* Pricing */
@@ -285,7 +294,7 @@
 .l-price-note { margin-top: 20px; font-size: 13px; color: var(--lt-dim); }
 
 /* CTA band */
-.l-cta-band { background: var(--lt); padding: 80px 32px; }
+.l-cta-band { background: var(--green-dark); padding: 80px 32px; }
 .l-cta-inner { max-width: 640px; margin: 0 auto; text-align: center; }
 .l-cta-inner .l-h2 { color: white; }
 .l-cta-sub { margin-top: 16px; font-size: 12.5px; color: #78716c; }

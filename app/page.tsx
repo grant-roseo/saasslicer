@@ -42,7 +42,7 @@ export default function HomePage() {
           <div>
             <div className="l-eyebrow">AI-Powered Content Strategy</div>
             <h1 className="l-h1">Know exactly what<br />content <em>wins</em><br />in your market.</h1>
-            <p className="l-hero-sub">SaaS Slicer maps every competitor&apos;s content architecture, finds the gaps costing you pipeline, builds ICP profiles, and hands you a prioritised content plan &mdash; in minutes.</p>
+            <p className="l-hero-sub">SaaS Slicer maps every competitor&apos;s content architecture in depth, surfaces the gaps costing you pipeline, builds ICP profiles grounded in real buyer signals, and hands you a prioritised content plan &mdash; knowing what you already have.</p>
             <div className="l-hero-actions">
               <a href="/app" className="l-btn l-btn-dark l-btn-lg">Start your analysis &rarr;</a>
               <a href="#how-it-works" className="l-btn l-btn-outline l-btn-lg">See how it works</a>
@@ -80,7 +80,7 @@ export default function HomePage() {
         <div className="l-stat-inner">
           <div className="l-stat"><div className="l-stat-num">5</div><p>Competitors analysed simultaneously with full URL clustering and meta crawling per site</p></div>
           <div className="l-stat"><div className="l-stat-num">20</div><p>Ideal Customer Profiles identified &mdash; by industry, role, pain points, and content needs</p></div>
-          <div className="l-stat"><div className="l-stat-num">7</div><p>Deliverables: XLSX with 5 sheets, two Word doc narratives, and a saveable JSON session</p></div>
+          <div className="l-stat"><div className="l-stat-num">7</div><p>Outputs: five-tab XLSX, two Word doc narratives (strategy + ICP), and a saveable session you can reload and re-export any time</p></div>
         </div>
       </div>
       <section id="features" className="l-section" style={{background:"white"}}>
@@ -90,10 +90,10 @@ export default function HomePage() {
           <p className="l-section-sub">Most content audits tell you what exists. SaaS Slicer tells you what&apos;s missing, who it&apos;s missing for, and exactly what to build next.</p>
           <div className="l-grid-3">
             <div className="l-card l-card-accent"><span className="l-card-icon">&#128300;</span><h3>Deep URL Clustering</h3><p>Every competitor URL is tokenised and grouped into content categories &mdash; blog, solutions, industries, use cases, comparisons, and more. Prioritised by strategic importance before analysis begins.</p></div>
-            <div className="l-card"><span className="l-card-icon">&#128375;</span><h3>Adaptive Meta Crawling</h3><p>SaaS Slicer fetches page titles, H1s, meta descriptions and schema types for each category. It samples intelligently &mdash; more depth on high-signal categories, faster passes on boilerplate pages.</p></div>
-            <div className="l-card"><span className="l-card-icon">&#127919;</span><h3>Gap Analysis</h3><p>Every significant content gap &mdash; missing verticals, role pages, comparison content, use cases, and proof pages &mdash; is identified, prioritised, and explained with a clear action and rationale.</p></div>
-            <div className="l-card"><span className="l-card-icon">&#128101;</span><h3>ICP Profiles (up to 20)</h3><p>Each competitor&apos;s content signals what audiences they&apos;re targeting. SaaS Slicer extracts the ICPs your competitors are serving that you&apos;re not &mdash; with pain points, JTBD, search queries, and AI prompts.</p></div>
-            <div className="l-card"><span className="l-card-icon">&#128203;</span><h3>Content Plan</h3><p>A prioritised list of page recommendations &mdash; net new, refresh, or repurpose &mdash; each with a URL suggestion, target query, funnel stage, core angle, and the ICPs it serves.</p></div>
+            <div className="l-card"><span className="l-card-icon">&#128375;</span><h3>Deep Page Intelligence</h3><p>Goes beyond titles and meta. SaaS Slicer reads heading structure, content depth, and freshness signals &mdash; distinguishing a genuine content moat from a placeholder page. Samples intelligently, spending more effort where it matters.</p></div>
+            <div className="l-card"><span className="l-card-icon">&#127919;</span><h3>Gap Analysis</h3><p>Every significant content gap &mdash; missing verticals, role pages, comparison content, use cases, and proof pages &mdash; is identified and prioritised. Recommendations are only made where data confirms the gap on both sides. Observations without enough signal are clearly flagged.</p></div>
+            <div className="l-card"><span className="l-card-icon">&#128101;</span><h3>ICP Profiles (up to 20)</h3><p>Combines competitor content signals, public brand visibility data, and tech stack intelligence to identify the audiences your competitors are winning that you&apos;re not &mdash; with pain points in buyer language, JTBD, search queries, and AI prompts.</p></div>
+            <div className="l-card"><span className="l-card-icon">&#128203;</span><h3>Content Plan</h3><p>Knows what you already have. Recommendations are classified as net new, refresh, or repurpose &mdash; so you&apos;re never told to build something that exists. Each item includes a URL suggestion, target query, funnel stage, and the ICPs it serves.</p></div>
             <div className="l-card"><span className="l-card-icon">&#9997;&#65039;</span><h3>Strategy Narratives</h3><p>Two AI-written Word documents: an overall content strategy playbook and an ICP-specific narrative. Editable, exportable, and ready to share with clients or leadership.</p></div>
           </div>
         </div>
