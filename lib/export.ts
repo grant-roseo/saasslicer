@@ -106,7 +106,7 @@ export function exportXLSX(state: AnalysisState) {
     XLSX.utils.book_append_sheet(wb, ws5, "Content ICP Map");
   }
 
-  XLSX.writeFile(wb, `sitemap-slicer-${clientName}-${slugDate()}.xlsx`);
+  XLSX.writeFile(wb, `saas-slicer-${clientName}-${slugDate()}.xlsx`);
 }
 
 // ─── Word Doc Export ──────────────────────────────────────────────────────────
@@ -173,7 +173,7 @@ export async function exportStrategyDoc(state: AnalysisState) {
   const blob = await Packer.toBlob(doc);
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `sitemap-slicer-strategy-${clientName}-${slugDate()}.docx`;
+  a.download = `saas-slicer-strategy-${clientName}-${slugDate()}.docx`;
   a.click();
   URL.revokeObjectURL(a.href);
 }
@@ -183,7 +183,7 @@ export function saveJson(state: AnalysisState) {
   const clientName = state.sites.find(s => s.role === "client")?.name || "analysis";
   dl(
     JSON.stringify(state, null, 2),
-    `sitemap-slicer-${clientName}-${slugDate()}.json`,
+    `saas-slicer-${clientName}-${slugDate()}.json`,
     "application/json"
   );
 }
