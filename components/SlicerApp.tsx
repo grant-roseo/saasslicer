@@ -510,25 +510,37 @@ Return ONLY valid JSON — no markdown, no commentary: {"items":[${SCHEMA}]}`,
     // Build richer context: crawled pages + integrations + reviews
     const clientCats = clientAn.clusters.map(c => `${c.name}(${c.urls.length})`).join(", ");
 
-    // Fetch G2/Capterra reviews for each competitor (ICP language goldmine)
-    addLog("  Fetching buyer reviews from G2/Capterra…");
+    // Fetch G2/Capterra reviews — parallel, short timeout, never blocks ICP generation
+    addLog("  Fetching buyer reviews from G2/Capterra (parallel)…");
     const reviewMap: Record<string, string> = {};
-    for (const comp of [...compAns, clientAn]) {
-      try {
-        const r = await fetch("/api/reviews", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productName: comp.siteName, domain: comp.domain }),
-        });
-        const data = await r.json();
-        if (data.found && data.reviewSnippets?.length) {
-          reviewMap[comp.siteName] = `${data.reviewSnippets.slice(0, 12).join(" ||| ")}`;
-          addLog(`  ✓ ${comp.siteName}: ${data.reviewSnippets.length} reviews from ${data.source}`, "success");
+    const allSites = [...compAns, clientAn];
+    const reviewResults = await Promise.allSettled(
+      allSites.map(comp =>
+        Promise.race([
+          fetch("/api/reviews", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ productName: comp.siteName, domain: comp.domain }),
+          }).then(r => r.json()).then(data => ({ siteName: comp.siteName, data })),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timeout")), 12000)),
+        ])
+      )
+    );
+    for (const result of reviewResults) {
+      if (result.status === "fulfilled") {
+        const { siteName, data } = result.value as { siteName: string; data: any };
+        if (data?.found && data.reviewSnippets?.length) {
+          reviewMap[siteName] = data.reviewSnippets.slice(0, 12).join(" ||| ");
+          addLog(`  ✓ ${siteName}: ${data.reviewSnippets.length} reviews from ${data.source}`, "success");
         } else {
-          addLog(`  ${comp.siteName}: no reviews found (G2/Capterra)`, "info");
+          addLog(`  ${siteName}: no reviews found`, "info");
         }
-      } catch { addLog(`  ${comp.siteName}: review fetch failed`, "warn"); }
+      } else {
+        // Timeout or network error — log and continue, never fail the ICP phase
+        addLog(`  Review fetch skipped (timeout) — continuing without`, "info");
+      }
     }
+    addLog(`  Reviews complete: ${Object.keys(reviewMap).length}/${allSites.length} sites had data`);
 
     const compDetails = compAns.map(c => {
       const cats = c.clusters.map(cl => `${cl.name}(${cl.urls.length})`).join(", ");
@@ -795,18 +807,22 @@ Write:
         addLog("\n━━━ APPLYING EXPERT FEEDBACK ━━━", "header");
         addLog(feedback.slice(0, 100) + (feedback.length > 100 ? "…" : ""));
         const revised = await callAIJson<{ items: ContentItem[] }>(
-          `You are a content strategist refining a plan based on expert feedback.
-Return ONLY valid JSON: {"items":[...same schema, fully revised...]}
-Apply all feedback accurately. Re-number priority sequentially from 1.`,
-          `CURRENT PLAN (${planRef.current.length} items):
-${JSON.stringify(planRef.current.slice(0, 25), null, 1)}
-${planRef.current.length > 25 ? `...and ${planRef.current.length - 25} more` : ""}
+          `You are a content strategist refining a content plan based on expert feedback.
+CRITICAL RULES:
+1. PRESERVE all existing items unless the feedback explicitly says to remove something
+2. ADD new items the expert has requested — do not replace existing ones with them
+3. MODIFY only the specific items the feedback calls out
+4. The output must include ALL original items PLUS any additions/modifications
+5. Re-number priority sequentially from 1 after any reordering
+Return ONLY valid JSON: {"items":[...complete list including all originals plus changes...]}`,
+          `CURRENT PLAN — ${planRef.current.length} items (PRESERVE ALL OF THESE unless told to remove):
+${JSON.stringify(planRef.current, null, 1)}
 
-EXPERT FEEDBACK:
+EXPERT FEEDBACK (additive — add/modify as requested, keep everything else):
 ${feedback}
 
-Return complete revised {"items":[...]} list.`,
-          3000,
+Return the COMPLETE list: all ${planRef.current.length} original items plus any new ones, with only the requested modifications applied.`,
+          4000,
           { items: planRef.current }
         );
         finalPlan = (revised.items || planRef.current).map((item, idx) => ({ ...item, priority: idx + 1 }));
