@@ -22,7 +22,7 @@ export async function callAI(
 
     if (p === "openai") {
       const body = {
-        model: "gpt-4o",
+        model: "gpt-4o-mini",  // 15x cheaper than gpt-4o, excellent for structured JSON
         max_tokens: maxTokens,
         messages: [
           { role: "system", content: system },
@@ -45,8 +45,14 @@ export async function callAI(
       const d = await res.json().catch(() => ({}));
       if (res.ok && !d.error) return d.choices[0].message.content;
       const msg = d?.error?.message || `OpenAI error ${res.status}`;
-      if ((res.status === 429 || res.status === 503) && attempt < MAX_RETRIES) {
+      // Distinguish quota-exceeded (billing issue, no point retrying) from rate-limited (wait and retry)
+      const isQuotaError = msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("billing");
+      const isRateLimit  = (res.status === 429 && !isQuotaError) || res.status === 503;
+      if (isRateLimit && attempt < MAX_RETRIES) {
         await new Promise(r => setTimeout(r, DELAYS[attempt])); continue;
+      }
+      if (isQuotaError) {
+        throw new Error("OpenAI quota exceeded — check your billing at platform.openai.com/settings/billing");
       }
       throw new Error(msg);
 
