@@ -3,7 +3,8 @@ import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
   AlignmentType, PageBreak,
 } from "docx";
-import type { AnalysisState } from "./types";
+import type { AnalysisState, ContentItem, ContentCluster } from "./types";
+import { CLUSTER_LABELS } from "./types";
 
 // ─── Slug date ────────────────────────────────────────────────────────────────
 function slugDate() { return new Date().toISOString().slice(0, 10); }
@@ -17,32 +18,130 @@ function dl(content: string, filename: string, mime: string) {
   URL.revokeObjectURL(a.href);
 }
 
-// ─── XLSX Export (no narrative tab) ──────────────────────────────────────────
+// ─── XLSX Export ──────────────────────────────────────────────────────────────
 export function exportXLSX(state: AnalysisState) {
   const wb = XLSX.utils.book_new();
   const clientName = state.sites.find(s => s.role === "client")?.name || "client";
 
-  // Sheet 1: Content Plan
+  // ── Sheet 1: Content Plan (expanded schema) ────────────────────────────────
   if (state.contentPlan.length > 0) {
-    const ws1 = XLSX.utils.aoa_to_sheet([
-      ["Priority","Page Title","URL Suggestion","Content Type","Target Query",
-       "Funnel Stage","Intent","Core Angle","Action","Reasoning","Gap Addressed",
-       "Estimated Effort","Word Count Target","ICPs Served","Problems Solved"],
-      ...state.contentPlan.map(i => [
-        i.priority, i.pageTitle, i.urlSuggestion, i.contentType, i.targetQuery,
-        i.funnelStage, i.intent, i.coreAngle, i.action, i.reasoning, i.gapAddressed,
-        i.estimatedEffort, i.wordCountTarget,
-        (i.icpIds || []).join(", "),
-        (i.problemsSolved || []).join("; "),
-      ]),
+    const header = [
+      "#", "Priority Tier", "Cluster", "Page Type",
+      "Page Title", "URL Suggestion",
+      "Target Query", "Funnel Stage", "Intent",
+      "Core Angle", "Action", "Source Material URLs", "Source Material Note",
+      "Content Type", "Reasoning", "Gap Addressed",
+      "Estimated Effort", "Word Count Target",
+      "ICPs Served", "Problems Solved",
+    ];
+    const rows = state.contentPlan.map(i => [
+      i.priority,
+      i.priorityTier || "",
+      i.cluster ? CLUSTER_LABELS[i.cluster] : "",
+      i.pageTypeCategory || "",
+      i.pageTitle,
+      i.urlSuggestion,
+      i.targetQuery,
+      i.funnelStage,
+      i.intent,
+      i.coreAngle,
+      i.action,
+      (i.sourceMaterial?.urls || []).join(", "),
+      i.sourceMaterial?.note || "",
+      i.contentType,
+      i.reasoning,
+      i.gapAddressed,
+      i.estimatedEffort,
+      i.wordCountTarget,
+      (i.icpIds || []).join(", "),
+      (i.problemsSolved || []).join("; "),
     ]);
-    ws1["!cols"] = [6,42,36,22,42,12,16,52,12,55,36,14,14,30,50].map(w => ({ wch: w }));
+    const ws1 = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    ws1["!cols"] = [4, 10, 22, 22, 42, 36, 38, 12, 14, 48, 12, 45, 50, 22, 55, 34, 12, 14, 30, 50].map(w => ({ wch: w }));
+    // Freeze header row
+    ws1["!freeze"] = { xSplit: 0, ySplit: 1 };
     XLSX.utils.book_append_sheet(wb, ws1, "Content Plan");
   }
 
-  // Sheet 2: Gap Analysis
+  // ── Sheet 2: Strategy by Cluster (NEW) ──────────────────────────────────────
+  // Pivoted view — items grouped by cluster for strategic narrative reading.
+  // Each cluster section shows its items in sequence. Matches the reference
+  // strategy deck's cluster-by-cluster presentation.
+  if (state.contentPlan.length > 0) {
+    const byCluster = groupByCluster(state.contentPlan);
+    const rows: (string | number)[][] = [];
+
+    const header = [
+      "Cluster", "Priority", "#",
+      "Page Title", "URL Suggestion", "Page Type", "Target Query",
+      "Funnel", "Intent", "Action", "Source Material",
+      "Core Angle",
+    ];
+    rows.push(header);
+
+    // Deterministic cluster order matching the strategic narrative
+    const clusterOrder: ContentCluster[] = [
+      "core_platform", "role_solutions", "industry_verticals", "topic_guides",
+      "services_led", "commercial_education", "proof_and_hubs", "interactive_tools",
+    ];
+
+    for (const cluster of clusterOrder) {
+      const items = byCluster.get(cluster) || [];
+      if (!items.length) continue;
+      // Section separator row with cluster label
+      rows.push([`━━━ ${CLUSTER_LABELS[cluster]} (${items.length}) ━━━`, "", "", "", "", "", "", "", "", "", "", ""]);
+      for (const i of items) {
+        const sourceSummary = i.sourceMaterial && i.sourceMaterial.action !== "none"
+          ? `[${i.sourceMaterial.action}] ${(i.sourceMaterial.urls || []).join(", ")}${i.sourceMaterial.note ? " — " + i.sourceMaterial.note : ""}`
+          : "";
+        rows.push([
+          "",
+          i.priorityTier || "",
+          i.priority,
+          i.pageTitle,
+          i.urlSuggestion,
+          i.pageTypeCategory || "",
+          i.targetQuery,
+          i.funnelStage,
+          i.intent,
+          i.action,
+          sourceSummary,
+          i.coreAngle,
+        ]);
+      }
+    }
+
+    // Include any items that don't match known clusters at the end
+    const unclustered = state.contentPlan.filter(i => !i.cluster || !clusterOrder.includes(i.cluster as ContentCluster));
+    if (unclustered.length) {
+      rows.push([`━━━ Uncategorized (${unclustered.length}) ━━━`, "", "", "", "", "", "", "", "", "", "", ""]);
+      for (const i of unclustered) {
+        rows.push([
+          "",
+          i.priorityTier || "",
+          i.priority,
+          i.pageTitle,
+          i.urlSuggestion,
+          i.pageTypeCategory || "",
+          i.targetQuery,
+          i.funnelStage,
+          i.intent,
+          i.action,
+          "",
+          i.coreAngle,
+        ]);
+      }
+    }
+
+    const ws2 = XLSX.utils.aoa_to_sheet(rows);
+    ws2["!cols"] = [24, 8, 4, 42, 36, 22, 38, 10, 14, 12, 55, 48].map(w => ({ wch: w }));
+    ws2["!freeze"] = { xSplit: 0, ySplit: 1 };
+    XLSX.utils.book_append_sheet(wb, ws2, "Strategy by Cluster");
+  }
+
+  // ── Sheet 3: Gap Analysis ───────────────────────────────────────────────────
   if (state.gapAnalysis?.gaps) {
-    const ws2 = XLSX.utils.aoa_to_sheet([
+    const ws3 = XLSX.utils.aoa_to_sheet([
       ["Title","Type","Priority","Description","Opportunity","Reasoning","Est. Pages","Funnel","Competitors","ICP Relevance"],
       ...state.gapAnalysis.gaps.map(g => [
         g.title, g.gapType, g.priority, g.description, g.opportunity, g.reasoning,
@@ -51,12 +150,12 @@ export function exportXLSX(state: AnalysisState) {
         (g.icpRelevance || []).join(", "),
       ]),
     ]);
-    ws2["!cols"] = [36,20,10,55,55,55,12,10,28,30].map(w => ({ wch: w }));
-    XLSX.utils.book_append_sheet(wb, ws2, "Gap Analysis");
+    ws3["!cols"] = [36,20,10,55,55,55,12,10,28,30].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws3, "Gap Analysis");
   }
 
-  // Sheet 3: Site Overview
-  const ws3 = XLSX.utils.aoa_to_sheet([
+  // ── Sheet 4: Site Overview ──────────────────────────────────────────────────
+  const ws4 = XLSX.utils.aoa_to_sheet([
     ["Site","Role","URLs Analyzed","Categories","Strategy Summary","Strengths","Notable Gaps"],
     ...Object.values(state.siteAnalyses).map(a => [
       a.siteName, a.isClient ? "Client" : "Competitor",
@@ -66,12 +165,12 @@ export function exportXLSX(state: AnalysisState) {
       (a.notableGaps || []).join(" | "),
     ]),
   ]);
-  ws3["!cols"] = [22,12,14,12,60,60,60].map(w => ({ wch: w }));
-  XLSX.utils.book_append_sheet(wb, ws3, "Site Overview");
+  ws4["!cols"] = [22,12,14,12,60,60,60].map(w => ({ wch: w }));
+  XLSX.utils.book_append_sheet(wb, ws4, "Site Overview");
 
-  // Sheet 4: ICP Profiles
+  // ── Sheet 5: ICP Profiles ───────────────────────────────────────────────────
   if (state.icpAnalysis?.icps.length) {
-    const ws4 = XLSX.utils.aoa_to_sheet([
+    const ws5 = XLSX.utils.aoa_to_sheet([
       ["ICP Name","Role","Industry","Company Size","Primary Pains","Jobs to be Done",
        "Search Queries","AI Prompts","TOFU Needs","MOFU Needs","BOFU Needs",
        "Client Coverage Score","Priority Score","Gap Score","Source"],
@@ -88,25 +187,41 @@ export function exportXLSX(state: AnalysisState) {
         icp.sourceCompetitor,
       ]),
     ]);
-    ws4["!cols"] = [40,30,25,30,60,60,60,60,50,50,50,15,15,15,25].map(w => ({ wch: w }));
-    XLSX.utils.book_append_sheet(wb, ws4, "ICP Profiles");
+    ws5["!cols"] = [40,30,25,30,60,60,60,60,50,50,50,15,15,15,25].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws5, "ICP Profiles");
   }
 
-  // Sheet 5: Content → ICP Mapping
+  // ── Sheet 6: Content → ICP Mapping ──────────────────────────────────────────
   if (state.contentPlan.length && state.icpAnalysis?.icps.length) {
-    const rows: (string | number)[][] = [["ICP Name","ICP Role","Industry","Funnel Stage","Page Title","URL","Content Type","Action"]];
+    const rows: (string | number)[][] = [["ICP Name","ICP Role","Industry","Funnel Stage","Page Title","URL","Cluster","Page Type","Action"]];
     for (const icp of state.icpAnalysis.icps) {
       const mapped = state.contentPlan.filter(c => (c.icpIds || []).includes(icp.id));
       for (const item of mapped) {
-        rows.push([icp.name, icp.role, icp.industry, item.funnelStage, item.pageTitle, item.urlSuggestion, item.contentType, item.action]);
+        rows.push([
+          icp.name, icp.role, icp.industry, item.funnelStage,
+          item.pageTitle, item.urlSuggestion,
+          item.cluster ? CLUSTER_LABELS[item.cluster] : "",
+          item.pageTypeCategory || "",
+          item.action,
+        ]);
       }
     }
-    const ws5 = XLSX.utils.aoa_to_sheet(rows);
-    ws5["!cols"] = [40,28,22,12,42,36,22,12].map(w => ({ wch: w }));
-    XLSX.utils.book_append_sheet(wb, ws5, "Content ICP Map");
+    const ws6 = XLSX.utils.aoa_to_sheet(rows);
+    ws6["!cols"] = [40,28,22,12,42,36,22,22,12].map(w => ({ wch: w }));
+    XLSX.utils.book_append_sheet(wb, ws6, "Content ICP Map");
   }
 
   XLSX.writeFile(wb, `saas-slicer-${clientName}-${slugDate()}.xlsx`);
+}
+
+function groupByCluster(items: ContentItem[]): Map<ContentCluster | "unknown", ContentItem[]> {
+  const map = new Map<ContentCluster | "unknown", ContentItem[]>();
+  for (const item of items) {
+    const key = (item.cluster || "unknown") as ContentCluster | "unknown";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(item);
+  }
+  return map;
 }
 
 // ─── Word Doc Export ──────────────────────────────────────────────────────────
@@ -127,7 +242,6 @@ function mdToDocxParagraphs(md: string): Paragraph[] {
     } else if (/^\d+\.\s/.test(t)) {
       paras.push(new Paragraph({ text: t.replace(/^\d+\.\s/, ""), numbering: { reference: "numbered-list", level: 0 } }));
     } else {
-      // Inline bold/italic
       const runs: TextRun[] = [];
       const parts = t.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
       for (const part of parts) {

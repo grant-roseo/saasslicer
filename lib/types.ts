@@ -48,18 +48,18 @@ export type CategoryType =
 
 // Priority order — higher index = higher crawl priority
 export const CATEGORY_PRIORITY: Record<CategoryType, number> = {
-  product_service:   10,  // core product pages
-  industry_vertical: 10,  // verticals = key gap signal
-  who_we_serve:      10,  // role/persona pages = key gap signal
-  comparison:        10,  // vs/alternative pages = high-value BOFU
-  solution:          9,   // solution/use-case pages
-  blog:              9,   // content volume signal
-  case_study:        9,   // customer proof = key gap signal
-  resource_guide:    6,   // educational resources
-  landing_page:      5,   // conversion pages
-  pricing:           5,   // pricing structure
-  use_case:          4,   // often subsumed by solution
-  docs_support:      2,   // low gap priority
+  product_service:   10,
+  industry_vertical: 10,
+  who_we_serve:      10,
+  comparison:        10,
+  solution:          9,
+  blog:              9,
+  case_study:        9,
+  resource_guide:    6,
+  landing_page:      5,
+  pricing:           5,
+  use_case:          4,
+  docs_support:      2,
   other:             1,
 };
 
@@ -69,22 +69,22 @@ export interface CrawledPage {
   title: string;
   metaDescription: string;
   h1: string;
-  h2s: string[];            // H2 headings — topic coverage depth
-  h3s: string[];            // H3 headings — sub-topic detail
-  schemaTypes: string[];    // JSON-LD @type values found
-  wordCount: number;        // actual body content word count
-  publishedDate: string;    // ISO date string or "" — content freshness signal
-  integrationsWith: string[]; // integration partner names (if integration page)
+  h2s: string[];
+  h3s: string[];
+  schemaTypes: string[];
+  wordCount: number;
+  publishedDate: string;
+  integrationsWith: string[];
   crawlMethod: "fetch" | "skipped" | "failed";
 }
 
 // ─── Review Data ──────────────────────────────────────────────────────────────
 export interface ReviewData {
-  source: string;           // "g2" | "capterra" | "none"
+  source: string;
   productSlug: string;
-  reviewSnippets: string[]; // raw review text extracts (up to 25)
-  painThemes: string[];     // Claude-extracted pain point themes
-  praiseThemes: string[];   // what buyers love — useful for positioning
+  reviewSnippets: string[];
+  painThemes: string[];
+  praiseThemes: string[];
   fetchedAt: string;
 }
 
@@ -103,8 +103,8 @@ export interface SiteAnalysis {
   notableGaps: string[];
   contentVelocitySignal: string;
   schemaTypesFound: string[];
-  integrationsEcosystem: string[];  // integration partner names → ICP signal
-  contentDepthProfile: string;      // summary of content depth/freshness
+  integrationsEcosystem: string[];
+  contentDepthProfile: string;
 }
 
 // ─── Gap Analysis ─────────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ export interface Gap {
   estimatedPages: number;
   funnelStage: FunnelStage;
   competitorsDoing: string[];
-  icpRelevance: string[];   // which ICP ids this gap affects
+  icpRelevance: string[];
 }
 
 export interface GapAnalysis {
@@ -148,58 +148,126 @@ export type ContentAction = "net_new" | "refresh" | "repurpose";
 export type ContentIntent = "informational" | "commercial" | "navigational" | "transactional";
 export type EffortLevel = "low" | "medium" | "high";
 
+// ─── NEW: Strategic Cluster ───────────────────────────────────────────────────
+// 8 generic clusters modelled on the structure of high-quality strategy decks.
+// These group items into a strategic narrative rather than a flat list.
+export type ContentCluster =
+  | "core_platform"         // Product pillar, solution landing, pricing
+  | "role_solutions"        // Role/persona-specific pages
+  | "industry_verticals"    // Industry-specific pages
+  | "topic_guides"          // Subject-matter deep dives (contract/clause/topic guides)
+  | "services_led"          // Managed services, consulting, hybrid offerings
+  | "commercial_education"  // Comparisons, buyer guides, category education
+  | "proof_and_hubs"        // Customer stories, case study hubs
+  | "interactive_tools";    // Calculators, assessments, gated tools
+
+export const CLUSTER_LABELS: Record<ContentCluster, string> = {
+  core_platform:        "Core Platform",
+  role_solutions:       "Role Solutions",
+  industry_verticals:   "Industry Verticals",
+  topic_guides:         "Topic Guides",
+  services_led:         "Services-Led",
+  commercial_education: "Commercial Education",
+  proof_and_hubs:       "Proof & Hubs",
+  interactive_tools:    "Interactive Tools",
+};
+
+// ─── NEW: Crisp Page Type Taxonomy ────────────────────────────────────────────
+export type PageTypeCategory =
+  | "product_pillar"
+  | "solution_landing_page"
+  | "role_page"
+  | "industry_page"
+  | "topic_guide"
+  | "service_page"
+  | "comparison_page"
+  | "customer_story_hub"
+  | "gated_guide"
+  | "interactive_tool"
+  | "blog_article"
+  | "glossary"
+  | "template_resource";
+
+// ─── NEW: Priority Tier ───────────────────────────────────────────────────────
+// Coarse strategic priority independent of sequential numbering.
+export type PriorityTier = "P1" | "P2" | "P3";
+
+// ─── NEW: Source Material ─────────────────────────────────────────────────────
+// For refresh/repurpose items, specifies which existing client URLs should be
+// consolidated, upgraded, or pulled from. Mirrors the "Source Material / Notes"
+// column in high-quality strategy decks.
+export interface SourceMaterial {
+  action: "consolidate" | "upgrade" | "pull_from" | "none";
+  urls: string[];   // existing client URLs this item builds on (pathnames)
+  note: string;     // human-readable instruction, e.g. "Consolidate overlap from X, Y, Z"
+}
+
 export interface ContentItem {
-  priority: number;
+  priority: number;                      // sequential display order
+  priorityTier?: PriorityTier;           // NEW — P1/P2/P3
+  cluster?: ContentCluster;              // NEW — strategic grouping
   pageTitle: string;
   urlSuggestion: string;
-  contentType: string;
+  contentType: string;                   // legacy free-text (kept for backward compat)
+  pageTypeCategory?: PageTypeCategory;   // NEW — crisp taxonomy
   targetQuery: string;
   funnelStage: FunnelStage;
   intent: ContentIntent;
   coreAngle: string;
   action: ContentAction;
+  sourceMaterial?: SourceMaterial;       // NEW — existing content to leverage
   reasoning: string;
   gapAddressed: string;
   estimatedEffort: EffortLevel;
   wordCountTarget: number;
-  icpIds: string[];           // which ICPs this content serves
-  problemsSolved: string[];   // specific problems addressed
+  icpIds: string[];
+  problemsSolved: string[];
+}
+
+// ─── NEW: Plan Delta (for expert review) ─────────────────────────────────────
+// Expert review returns a delta, not a full plan. Prevents truncation-induced
+// data loss when the full plan would exceed output token budget.
+export interface PlanDelta {
+  add: ContentItem[];                    // items to append
+  modify: {
+    priority: number;                    // target existing item by priority
+    changes: Partial<ContentItem>;       // fields to overwrite
+    reason: string;                      // why this change
+  }[];
+  remove: { priority: number; reason: string }[]; // priorities to drop
+  summary: string;                       // brief note on overall changes
 }
 
 // ─── ICP System ──────────────────────────────────────────────────────────────
 export interface ICP {
   id: string;
-  name: string;               // e.g. "VP of Legal at Mid-Market SaaS"
-  role: string;               // job title / function
-  industry: string;           // vertical
-  companySizeProfile: string; // e.g. "50-500 employees, Series B-D"
-  sourceCompetitor: string;   // which site surfaced this ICP (or "inferred")
+  name: string;
+  role: string;
+  industry: string;
+  companySizeProfile: string;
+  sourceCompetitor: string;
 
-  // Pain & motivation
   primaryPains: string[];
   secondaryPains: string[];
-  jobsToBeDone: string[];     // JTBD framework
+  jobsToBeDone: string[];
 
-  // Search & AI behavior
-  searchQueries: string[];    // what they'd Google
-  aiPrompts: string[];        // what they'd ask Claude/ChatGPT/Gemini
+  searchQueries: string[];
+  aiPrompts: string[];
 
-  // Content needs by funnel stage
   tofuContentNeeds: string[];
   mofuContentNeeds: string[];
   bofuContentNeeds: string[];
 
-  // Scoring
-  clientCoverageScore: number;  // 0-100 how well client currently serves this ICP
-  priorityScore: number;        // 0-100 strategic importance
-  gapScore: number;             // 0-100 how big the content gap is
+  clientCoverageScore: number;
+  priorityScore: number;
+  gapScore: number;
 }
 
 export interface ICPAnalysis {
   icps: ICP[];
   narrativeSummary: string;
-  topUnservedICPs: string[];   // ICP ids client is missing most
-  quickWinICPs: string[];      // easiest to address
+  topUnservedICPs: string[];
+  quickWinICPs: string[];
 }
 
 // ─── Full Analysis State ──────────────────────────────────────────────────────
@@ -232,4 +300,31 @@ export interface ExportOptions {
   includeSiteOverview: boolean;
   includeICPProfiles: boolean;
   includeContentICPMap: boolean;
+}
+
+// ─── Backward-compatible defaulter ───────────────────────────────────────────
+// Applied when loading old JSON saves so new UI code doesn't crash on missing
+// fields. Any item missing cluster/priorityTier/etc. gets sensible defaults.
+export function hydrateContentItem(raw: Partial<ContentItem>): ContentItem {
+  return {
+    priority:         raw.priority ?? 0,
+    priorityTier:     raw.priorityTier ?? "P2",
+    cluster:          raw.cluster ?? "core_platform",
+    pageTitle:        raw.pageTitle ?? "",
+    urlSuggestion:    raw.urlSuggestion ?? "",
+    contentType:      raw.contentType ?? "",
+    pageTypeCategory: raw.pageTypeCategory ?? "blog_article",
+    targetQuery:      raw.targetQuery ?? "",
+    funnelStage:      raw.funnelStage ?? "TOFU",
+    intent:           raw.intent ?? "informational",
+    coreAngle:        raw.coreAngle ?? "",
+    action:           raw.action ?? "net_new",
+    sourceMaterial:   raw.sourceMaterial ?? { action: "none", urls: [], note: "" },
+    reasoning:        raw.reasoning ?? "",
+    gapAddressed:     raw.gapAddressed ?? "",
+    estimatedEffort:  raw.estimatedEffort ?? "medium",
+    wordCountTarget:  raw.wordCountTarget ?? 1200,
+    icpIds:           raw.icpIds ?? [],
+    problemsSolved:   raw.problemsSolved ?? [],
+  };
 }

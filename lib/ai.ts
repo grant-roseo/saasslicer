@@ -8,6 +8,16 @@ const ANTHROPIC_KEY = typeof process !== "undefined" ? (process.env.NEXT_PUBLIC_
 const OPENAI_KEY    = typeof process !== "undefined" ? (process.env.NEXT_PUBLIC_OPENAI_API_KEY    || "") : "";
 const GEMINI_KEY    = typeof process !== "undefined" ? (process.env.NEXT_PUBLIC_GEMINI_API_KEY    || "") : "";
 
+// Error class that carries the raw response text so callers can log it
+export class AIParseError extends Error {
+  rawResponse: string;
+  constructor(message: string, rawResponse: string) {
+    super(message);
+    this.name = "AIParseError";
+    this.rawResponse = rawResponse;
+  }
+}
+
 export async function callAI(
   system: string,
   user: string,
@@ -22,7 +32,7 @@ export async function callAI(
 
     if (p === "openai") {
       const body = {
-        model: "gpt-4o-mini",  // 15x cheaper than gpt-4o, excellent for structured JSON
+        model: "gpt-4o-mini",
         max_tokens: maxTokens,
         messages: [
           { role: "system", content: system },
@@ -45,7 +55,6 @@ export async function callAI(
       const d = await res.json().catch(() => ({}));
       if (res.ok && !d.error) return d.choices[0].message.content;
       const msg = d?.error?.message || `OpenAI error ${res.status}`;
-      // Distinguish quota-exceeded (billing issue, no point retrying) from rate-limited (wait and retry)
       const isQuotaError = msg.toLowerCase().includes("quota") || msg.toLowerCase().includes("billing");
       const isRateLimit  = (res.status === 429 && !isQuotaError) || res.status === 503;
       if (isRateLimit && attempt < MAX_RETRIES) {
@@ -126,31 +135,35 @@ export async function callAI(
   throw new Error("Max retries exceeded");
 }
 
-// JSON-safe wrapper
-export async function callAIJson<T>(
-  system: string,
-  user: string,
-  maxTokens = 2000,
-  fallback: T
-): Promise<T> {
-  const text = await callAI(system, user, maxTokens);
-  // Strip markdown fences
+// ─── JSON parsing helpers ────────────────────────────────────────────────────
+// Shared by both strict and legacy variants. Returns null if all tiers fail.
+function tryParseJson<T>(text: string): T | null {
   const clean = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-  // Try direct parse
-  try { return JSON.parse(clean); } catch {}
-  // Extract outermost {}
+
+  // Tier 1: direct parse
+  try { return JSON.parse(clean) as T; } catch {}
+
+  // Tier 2: extract outermost {...}
   const m = clean.match(/\{[\s\S]+\}/);
-  if (m) { try { return JSON.parse(m[0]); } catch {} }
-  // Repair truncated arrays
-  try { return repairJson<T>(clean, fallback); } catch {}
-  console.warn("JSON parse failed, returning fallback. Raw:", text.slice(0, 300));
-  return fallback;
+  if (m) { try { return JSON.parse(m[0]) as T; } catch {} }
+
+  // Tier 3: extract outermost [...]
+  const a = clean.match(/\[[\s\S]+\]/);
+  if (a) { try { return JSON.parse(a[0]) as T; } catch {} }
+
+  // Tier 4: repair truncated arrays
+  const repaired = repairJson<T>(clean);
+  if (repaired !== null) return repaired;
+
+  return null;
 }
 
-function repairJson<T>(text: string, fallback: T): T {
+// Repair a truncated JSON response by extracting complete {...} items.
+// Useful when max_tokens cuts off the response mid-array.
+function repairJson<T>(text: string): T | null {
   const arrStart = text.indexOf('"items"');
   const bracketIdx = arrStart >= 0 ? text.indexOf("[", arrStart) : text.indexOf("[{");
-  if (bracketIdx < 0) return fallback;
+  if (bracketIdx < 0) return null;
 
   const items: unknown[] = [];
   let i = bracketIdx + 1;
@@ -175,6 +188,47 @@ function repairJson<T>(text: string, fallback: T): T {
     }
     i = j;
   }
-  if (!items.length) return fallback;
+  if (!items.length) return null;
   return (arrStart >= 0 ? { items } : items) as T;
+}
+
+// ─── STRICT: throws on parse failure with response preview ────────────────────
+// Use this for critical calls where the caller needs to know when things fail.
+// The thrown AIParseError includes the raw response for logging.
+export async function callAIJsonStrict<T>(
+  system: string,
+  user: string,
+  maxTokens = 2000
+): Promise<T> {
+  const text = await callAI(system, user, maxTokens);
+  const parsed = tryParseJson<T>(text);
+  if (parsed !== null) return parsed;
+  throw new AIParseError(
+    `JSON parse failed after ${text.length} chars returned. Likely output-token truncation or schema drift.`,
+    text
+  );
+}
+
+// ─── LEGACY: returns fallback on parse failure (kept for backward compat) ────
+// Callers that use this MUST log explicitly — the function no longer silently
+// swallows failures. A console.error is emitted so debugging is possible.
+export async function callAIJson<T>(
+  system: string,
+  user: string,
+  maxTokens = 2000,
+  fallback: T
+): Promise<T> {
+  const text = await callAI(system, user, maxTokens);
+  const parsed = tryParseJson<T>(text);
+  if (parsed !== null) return parsed;
+
+  // Louder than console.warn — this is surfaced in browser devtools for debugging
+  // but callers should ideally use callAIJsonStrict and handle failures explicitly.
+  console.error(
+    "[ai] JSON parse failed — returning fallback. Response length:",
+    text.length,
+    "\nPreview:", text.slice(0, 400),
+    "\nTail:", text.slice(-200)
+  );
+  return fallback;
 }
