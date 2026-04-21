@@ -9,7 +9,7 @@ import type {
   GapAnalysis, ContentItem, ICPAnalysis, ICP, AnalysisState, LogEntry,
   ContentCluster, PlanDelta,
 } from "@/lib/types";
-import { hydrateContentItem, CLUSTER_LABELS } from "@/lib/types";
+import { hydrateContentItem, linkPlanToICPs, CLUSTER_LABELS } from "@/lib/types";
 
 import InputPhase   from "./phases/InputPhase";
 import AnalysisPhase from "./phases/AnalysisPhase";
@@ -1125,6 +1125,26 @@ For modification feedback, return modify:[{priority, changes, reason}] with only
         addLog(`✅ ${icps.icps.length} ICPs across ${new Set(icps.icps.map(i => i.industry)).size} industries`, "success");
       }
       setProgress(90);
+
+      // ── Plan ↔ ICP linking ──────────────────────────────────────────────
+      // Plan icpIds are role slugs (vp_legal, cfo, compliance_officer) because
+      // plan generation runs BEFORE ICPs exist. Now that ICPs are available,
+      // resolve those slugs to real ICP IDs so UI filters, Content→ICP map,
+      // and XLSX export all work correctly.
+      if (icps.icps.length && finalPlan.length) {
+        const linked = linkPlanToICPs(finalPlan, icps.icps);
+        const linkedCount   = linked.filter(i => (i.icpIds || []).length > 0).length;
+        const unlinkedCount = linked.length - linkedCount;
+        const totalMappings = linked.reduce((s, i) => s + (i.icpIds || []).length, 0);
+        finalPlan = linked;
+        planRef.current = linked;
+        setContentPlan(linked);
+        addLog(
+          `🔗 Linked ${linkedCount}/${linked.length} plan items to ICPs (${totalMappings} total mappings)` +
+          (unlinkedCount > 0 ? ` — ${unlinkedCount} items had no ICP match` : ""),
+          "success"
+        );
+      }
 
       setSubPhase("narrative");
       addLog("\n━━━ PHASE 5: NARRATIVES ━━━", "header");
