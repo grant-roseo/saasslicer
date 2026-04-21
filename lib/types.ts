@@ -328,3 +328,75 @@ export function hydrateContentItem(raw: Partial<ContentItem>): ContentItem {
     problemsSolved:   raw.problemsSolved ?? [],
   };
 }
+
+// ─── Plan ↔ ICP linker ───────────────────────────────────────────────────────
+// Plan generation (phase 3) runs BEFORE ICPs are generated (phase 4). The plan
+// prompt instructs Claude to use role slugs for icpIds (vp_legal, cfo, etc.)
+// as placeholders. This function resolves those slugs to the actual ICP IDs
+// once ICPs exist, so the UI's icp.id-based filters/mappings work correctly.
+//
+// Matching strategy (in order):
+//   1. Direct ID match — pass-through if plan already uses real ICP IDs
+//   2. Token-subset match on normalized role — with common abbreviation expansion
+//      (cfo → "chief financial officer", vp → "vice president", etc.)
+//
+// An entry can resolve to MULTIPLE ICP IDs — e.g. "vp_legal" matches every ICP
+// whose role is "VP Legal" regardless of industry. This is semantically correct:
+// content serving "VP Legal" serves all VP-Legal variants.
+export function linkPlanToICPs(plan: ContentItem[], icps: ICP[]): ContentItem[] {
+  if (!icps.length) return plan;
+
+  // Common role abbreviations — expanded AFTER slug separators become spaces so
+  // "vp_legal" becomes "vp legal" first, then \bvp\b can match it and expand to
+  // "vice president legal".
+  const expandAbbreviations = (s: string): string =>
+    s.replace(/\bcfo\b/gi, "chief financial officer")
+     .replace(/\bceo\b/gi, "chief executive officer")
+     .replace(/\bcoo\b/gi, "chief operating officer")
+     .replace(/\bcto\b/gi, "chief technology officer")
+     .replace(/\bcio\b/gi, "chief information officer")
+     .replace(/\bcmo\b/gi, "chief marketing officer")
+     .replace(/\bcco\b/gi, "chief compliance officer")
+     .replace(/\bcpo\b/gi, "chief privacy officer")
+     .replace(/\bgc\b/gi, "general counsel")
+     .replace(/\bevp\b/gi, "executive vice president")
+     .replace(/\bsvp\b/gi, "senior vice president")
+     .replace(/\bvp\b/gi, "vice president")
+     .replace(/\bit\b/gi, "information technology");
+
+  const normalize = (s: string): string => {
+    // Separators → spaces FIRST so word-boundary regex inside expandAbbreviations works
+    const spaced = (s || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+    return expandAbbreviations(spaced).replace(/\s+/g, " ").trim();
+  };
+
+  // Tokenize with min-length 2 to avoid spurious matches on "of", "at", etc.
+  const tokensOf = (s: string): string[] =>
+    normalize(s).split(" ").filter(t => t.length >= 2);
+
+  return plan.map(item => {
+    const sourceIds = item.icpIds || [];
+    const resolved = new Set<string>();
+
+    for (const entry of sourceIds) {
+      // 1) Pass-through for entries that are already real ICP IDs
+      const direct = icps.find(i => i.id === entry);
+      if (direct) { resolved.add(direct.id); continue; }
+
+      // 2) Token-subset match on role
+      const needleTokens = tokensOf(entry);
+      if (!needleTokens.length) continue;
+
+      for (const icp of icps) {
+        const haystack = normalize(icp.role || "");
+        if (!haystack) continue;
+        // All significant tokens from the plan slug must appear in the ICP role
+        if (needleTokens.every(t => haystack.includes(t))) {
+          resolved.add(icp.id);
+        }
+      }
+    }
+
+    return { ...item, icpIds: [...resolved] };
+  });
+}
