@@ -1,6 +1,6 @@
 {
   "name": "saas-slicer",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -14,7 +14,9 @@
     "react-dom": "^19",
     "cheerio": "^1.0.0",
     "docx": "^8.5.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "@supabase/supabase-js": "^2.47.0",
+    "@supabase/ssr": "^0.5.2"
   },
   "devDependencies": {
     "@types/node": "^20",
