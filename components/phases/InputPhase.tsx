@@ -2,13 +2,7 @@
 import { useState, useRef } from "react";
 import { T, card, btn, btnDisabled, inputStyle, labelStyle, badge } from "@/lib/design";
 import { getDomain, filterUrls, sampleUrls, parseMultipleXml, discoverSitemapUrls } from "@/lib/sitemap";
-import type { SiteInput, AIProvider, AnalysisState } from "@/lib/types";
-
-const PROVIDERS: { id: AIProvider; label: string; sub: string; color: string }[] = [
-  { id: "anthropic", label: "Claude Sonnet",  sub: "Anthropic · Best for nuanced strategy", color: T.accent },
-  { id: "openai",    label: "GPT-4o",         sub: "OpenAI · Fast and widely supported",   color: "#10a37f" },
-  { id: "gemini",    label: "Gemini 2.5 Pro", sub: "Google · Strong on large contexts",    color: "#4285f4" },
-];
+import type { SiteInput, AnalysisState } from "@/lib/types";
 
 function mkSite(id: string, role: "client" | "competitor"): SiteInput {
   return { id, role, name: "", domain: "", rawInput: "", inputMethod: "auto", urls: [], totalUrls: 0, status: "idle", errorMsg: "" };
@@ -176,7 +170,7 @@ function SiteCard({ site, index, isClient, allSites, onChange, onRemove }: SiteC
                     {looksLikeXml ? "⚠ Looks like XML — use Paste XML tab" : urlCount > 0 ? `✓ ${urlCount} URLs ready` : "Paste one URL per line"}
                   </div>
                   <button onClick={handleUrlPaste} disabled={urlCount === 0 || looksLikeXml} style={ urlCount > 0 && !looksLikeXml ? btn("primary") : btnDisabled() }>
-                    Use These URLs
+                    Use these URLs
                   </button>
                 </div>
               </div>
@@ -185,20 +179,20 @@ function SiteCard({ site, index, isClient, allSites, onChange, onRemove }: SiteC
             {site.inputMethod === "xml_paste" && (
               <div>
                 <div style={{ fontSize:12.5, color:T.info, marginBottom:8 }}>
-                  Paste raw XML from one or more sitemap files. You can paste multiple {"<urlset>"} blocks together.
+                  Paste the raw XML from sitemap.xml. Multiple sitemaps can be concatenated together.
                 </div>
                 <textarea
-                  style={{ ...inputStyle, height:140, resize:"vertical", lineHeight:1.5, fontSize:11.5, fontFamily:"'Courier New',monospace" }}
-                  placeholder={"<?xml version=\"1.0\"?>\n<urlset>\n  <url><loc>https://example.com/page-one</loc></url>\n  <url><loc>https://example.com/page-two</loc></url>\n</urlset>"}
+                  style={{ ...inputStyle, height:140, resize:"vertical", lineHeight:1.4, fontSize:11, fontFamily:"'Courier New',monospace" }}
+                  placeholder='<?xml version="1.0" encoding="UTF-8"?>&#10;<urlset>&#10;  <url><loc>https://example.com/page1</loc></url>&#10;  ...'
                   value={site.rawInput}
                   onChange={e => onChange({ rawInput: e.target.value })}
                 />
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginTop:8 }}>
                   <div style={{ fontSize:12, color: xmlCount > 0 ? T.success : T.muted }}>
-                    {xmlCount > 0 ? `✓ ${xmlCount} <loc> URLs found` : "Paste sitemap XML above"}
+                    {xmlCount > 0 ? `✓ ${xmlCount} URLs found in XML` : "Paste raw sitemap XML"}
                   </div>
                   <button onClick={handleXmlPaste} disabled={xmlCount === 0} style={ xmlCount > 0 ? btn("primary") : btnDisabled() }>
-                    Use These URLs
+                    Use these URLs
                   </button>
                 </div>
               </div>
@@ -206,8 +200,8 @@ function SiteCard({ site, index, isClient, allSites, onChange, onRemove }: SiteC
           </div>
 
           {site.errorMsg && (
-            <div style={{ fontSize:13, color:T.error, background:T.errorBg, border:`1px solid ${T.errorBdr}`, borderRadius:7, padding:"8px 12px", marginTop:8 }}>
-              ⚠ {site.errorMsg}
+            <div style={{ fontSize:12.5, color:T.error, padding:"6px 10px", background:T.errorBg, borderRadius:6 }}>
+              {site.errorMsg}
             </div>
           )}
         </>
@@ -233,13 +227,12 @@ export default function InputPhase({
   onStart,
   onLoadJson,
 }: {
-  onStart: (sites: SiteInput[], notes: string, provider: AIProvider) => void;
+  onStart: (sites: SiteInput[], notes: string) => void;
   onLoadJson: (state: AnalysisState) => void;
 }) {
   const [client,    setClient]    = useState<SiteInput>(mkSite("client","client"));
   const [comps,     setComps]     = useState<SiteInput[]>([mkSite("c1","competitor")]);
   const [notes,     setNotes]     = useState("");
-  const [provider,  setProvider]  = useState<AIProvider>("anthropic");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const allSites = [client, ...comps];
@@ -280,13 +273,13 @@ export default function InputPhase({
       ...s,
       name: s.name || s.domain,
     }));
-    onStart(sites, notes, provider);
+    onStart(sites, notes);
   }
 
   return (
     <div style={{ maxWidth: 820, margin: "0 auto" }}>
       {/* Hero */}
-      <div style={{ marginBottom: 36, textAlign:"center" }}>
+      <div style={{ marginBottom: 28, textAlign:"center" }}>
         <h1 style={{ fontSize: 32, fontWeight: 900, color: T.text, margin: "0 0 10px", letterSpacing:"-1px" }}>
           Competitive Content <span style={{ color: T.accent }}>Intelligence</span>
         </h1>
@@ -295,23 +288,29 @@ export default function InputPhase({
         </p>
       </div>
 
-      {/* Model selector */}
-      <div style={{ ...card(), marginBottom:24 }}>
-        <Label>AI Model</Label>
-        <div style={{ display:"flex", gap:10, flexWrap:"wrap" }}>
-          {PROVIDERS.map(opt => (
-            <div
-              key={opt.id}
-              onClick={() => setProvider(opt.id)}
-              style={{ flex:"1 1 180px", padding:"11px 14px", borderRadius:9, border:`2px solid ${provider === opt.id ? opt.color : T.border}`, background: provider === opt.id ? opt.color + "10" : T.surface, cursor:"pointer", transition:"all 0.15s" }}
-            >
-              <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:3 }}>
-                <div style={{ width:9, height:9, borderRadius:"50%", background: provider === opt.id ? opt.color : T.dim, transition:"background 0.15s" }} />
-                <div style={{ fontSize:13, fontWeight:700, color: provider === opt.id ? opt.color : T.text }}>{opt.label}</div>
-              </div>
-              <div style={{ fontSize:11, color:T.muted, paddingLeft:17 }}>{opt.sub}</div>
-            </div>
-          ))}
+      {/* ─── Model info strip (replaces the old provider selector) ─────────────
+          Opus 4.7 is the only primary model; Sonnet 4.6 acts as a silent
+          fallback. The user no longer has a choice — we just tell them what's
+          running so they know what quality tier the output reflects. */}
+      <div style={{
+        ...card(),
+        marginBottom: 22,
+        padding: "11px 16px",
+        display: "flex", alignItems: "center", gap: 12,
+        borderLeft: `3px solid ${T.accent}`,
+      }}>
+        <div style={{
+          fontSize: 11, fontWeight: 700, color: T.accent,
+          textTransform: "uppercase", letterSpacing: "0.6px",
+          whiteSpace: "nowrap",
+        }}>
+          Powered by
+        </div>
+        <div style={{ fontSize: 13.5, color: T.text, fontWeight: 600 }}>
+          Claude Opus 4.7
+        </div>
+        <div style={{ fontSize: 12, color: T.muted, flex: 1 }}>
+          · automatic Sonnet 4.6 fallback if needed
         </div>
       </div>
 
@@ -366,7 +365,7 @@ export default function InputPhase({
         <div style={{ background:T.infoBg, border:`1px solid ${T.infoBdr}`, borderRadius:8, padding:"10px 16px", marginBottom:20, fontSize:13, color:T.info }}>
           ℹ {readySites.length} site{readySites.length > 1 ? "s" : ""} ready ·
           {" "}{readySites.reduce((s,c) => s + c.urls.length, 0).toLocaleString()} total URLs ·
-          Est. <strong>5–12 min</strong> with crawling
+          Est. <strong>6–14 min</strong> with crawling
         </div>
       )}
 

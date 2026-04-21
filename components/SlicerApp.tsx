@@ -1,11 +1,11 @@
 "use client";
-import { useState, useRef, useCallback } from "react";
-import { setProvider, callAI, callAIJson, callAIJsonStrict, AIParseError } from "@/lib/ai";
+import { useState, useRef, useCallback, useEffect } from "react";
+import { callAI, callAIJson, callAIJsonStrict, AIParseError, onFallback, setAICallPhase } from "@/lib/ai";
 import { clusterUrls } from "@/lib/cluster";
 import { exportXLSX, exportStrategyDoc, saveJson } from "@/lib/export";
 import { T } from "@/lib/design";
 import type {
-  AIProvider, SiteInput, SiteAnalysis, UrlCluster, CrawledPage,
+  SiteInput, SiteAnalysis, UrlCluster, CrawledPage,
   GapAnalysis, ContentItem, ICPAnalysis, ICP, AnalysisState, LogEntry,
   ContentCluster, PlanDelta,
 } from "@/lib/types";
@@ -153,6 +153,20 @@ export default function SlicerApp() {
     }
   }, [addLog]);
 
+  // ─── Fallback listener ──────────────────────────────────────────────────────
+  // Surfaces Opus→Sonnet fallback events in the log panel. Fired when Opus
+  // fails (API error or JSON parse) and ai.ts silently recovers on Sonnet 4.6.
+  // Users see that the system self-healed — not a silent black box.
+  useEffect(() => {
+    onFallback((info) => {
+      const label = info.phase ? `${info.phase} — ` : "";
+      // Truncate long error messages to keep log tidy
+      const reason = info.reason.length > 120 ? info.reason.slice(0, 117) + "…" : info.reason;
+      addLog(`🔄 ${label}Opus failed, retrying on Sonnet 4.6: ${reason}`, "warn");
+    });
+    return () => { onFallback(null); };
+  }, [addLog]);
+
   // ─── Adaptive crawl loop ────────────────────────────────────────────────────
   async function adaptiveCrawl(
     cluster: UrlCluster,
@@ -229,7 +243,7 @@ Site: ${siteName}
 Pages crawled:
 ${sample.map(p => `- ${p.url}\n  Title: ${p.title}\n  H1: ${p.h1}`).join("\n")}
 How confident are you these pages represent the "${cluster.name}" category? 0=wrong category, 100=perfect match.`,
-        400,
+        500,
         { confidence: 60, reasoning: "default" }
       );
       return Math.max(0, Math.min(100, result.confidence || 60));
@@ -301,6 +315,7 @@ How confident are you these pages represent the "${cluster.name}" category? 0=wr
     const allTypes = ["industry_vertical","who_we_serve","comparison","case_study","solution","product_service","resource_guide","landing_page","pricing"];
     const missingTypes = allTypes.filter(t => !presentTypes.has(t as any));
 
+    setAICallPhase(`Site analysis: ${site.name}`);
     try {
       const result = await callAIJsonStrict<SiteAnalysis>(
         `You are an expert SaaS content strategist. Analyze this site's content architecture from URL patterns and page metadata.
@@ -336,7 +351,7 @@ For contentVelocitySignal: ONLY estimate publishing frequency if dateConfidence 
 For notableGaps/strengths referencing word count or content depth: ONLY include if wordCountConfidence >= 40%.
 RULE: If a signal is marked "OBSERVE ONLY" — report it but do NOT make a comparative claim.
 Set: isClient=${site.role === "client"}, siteId="${site.id}", siteName="${site.name}", domain="${site.domain}", totalUrls=${site.urls.length}`,
-        3000
+        4000
       );
 
       return {
@@ -417,6 +432,7 @@ ANALYST NOTES: ${notesRef.current || "None"}`;
         ? `\nSKIP gaps already covered (do not duplicate these): ${existingTitles.slice(0, 15).join(" | ")}`
         : "";
       addLog(`  ${batchName}: requesting ${targetCount}…`);
+      setAICallPhase(batchName);
       try {
         const result = await callAIJsonStrict<{
           narrative: string;
@@ -445,7 +461,7 @@ CONFIDENCE RULES:
 - Depth gaps (competitor has deeper content): ONLY if wordCountConfidence COMPARABLE on both sides
 - Velocity gaps: ONLY if publication dates COMPARABLE on both sides
 - Integration gaps: ONLY if both sides show CONFIRMED integrations`,
-          3000
+          4000
         );
         addLog(`  ${batchName}: ${result.gaps?.length || 0} gaps`, (result.gaps?.length || 0) > 0 ? "success" : "warn");
         return result;
@@ -558,6 +574,7 @@ CONFIDENCE RULES:
 }`;
 
       addLog(`  ▸ ${spec.label}…`);
+      setAICallPhase(spec.label);
       try {
         const result = await callAIJsonStrict<{ items: ContentItem[] }>(
           `You are a senior B2B SaaS content strategist generating ONE cluster of a multi-batch content plan.
@@ -596,7 +613,7 @@ PRIORITY TIER:
 icpIds use snake_case role slugs like: vp_legal, procurement_manager, in_house_counsel, compliance_officer, sales_ops, cfo, it_security, contract_manager, legal_ops, operations_manager
 problemsSolved: 2 specific buyer problems max.
 Every item MUST have pageTypeCategory from this allowed list: ${spec.allowedPageTypes.join(", ")}.`,
-          3500
+          4500
         );
         const items = (result.items || []).map(raw => {
           // Hydrate with defaults to guard against missing fields in Claude output
@@ -740,6 +757,7 @@ ANALYST NOTES: ${notes || "None"}`;
     async function icpBatch(batchLabel: string, focus: string, targetCount: number, existingNames: string[]): Promise<ICP[]> {
       const skip = existingNames.length ? `\nDO NOT duplicate these existing ICPs: ${existingNames.join(", ")}` : "";
       addLog(`  ▸ ${batchLabel}…`);
+      setAICallPhase(batchLabel);
       try {
         const result = await callAIJsonStrict<{ icps: ICP[] }>(
           `You are a B2B SaaS content strategist and ICP researcher.
@@ -767,7 +785,7 @@ For each ICP:
 - sourceCompetitor: which competitor's content/reviews surfaced this ICP
 
 Focus on role × industry combinations visible in competitor content but ABSENT from client content.`,
-          3500
+          4500
         );
         const icps = result.icps || [];
         addLog(`  ✓ ${batchLabel}: ${icps.length} ICPs`, icps.length > 0 ? "success" : "warn");
@@ -854,6 +872,7 @@ NOTES: ${notes || "None"}`;
     const SYS_ICP = `You are a B2B content strategist writing an ICP-focused content strategy. Use Markdown. Be specific about search queries, pain points, and content formats for each audience.`;
 
     addLog("  Writing strategy narrative…");
+    setAICallPhase("Strategy narrative");
     let strategy = "";
     try {
       strategy = await callAI(SYS_STRATEGY,
@@ -868,13 +887,14 @@ Write:
 (cover each of: Core Platform, Role Solutions, Industry Verticals, Topic Guides, Services-Led, Commercial Education, Proof & Hubs, Interactive Tools)
 ## Priority Sequence and Rationale
 ## Bottom Line`,
-        2000
+        2500
       );
     } catch (err) {
       logAIFailure("Strategy narrative", err);
     }
 
     addLog("  Writing ICP narrative…");
+    setAICallPhase("ICP narrative");
     let icpNarrative = "";
     try {
       icpNarrative = await callAI(SYS_ICP,
@@ -890,7 +910,7 @@ Write:
 ## Content Recommendations by ICP
 ## Quick Wins — Highest Gap, Lowest Effort
 ## Measuring ICP Coverage Over Time`,
-        2000
+        2500
       );
     } catch (err) {
       logAIFailure("ICP narrative", err);
@@ -900,8 +920,9 @@ Write:
   }
 
   // ─── Master orchestrator ────────────────────────────────────────────────────
-  async function startAnalysis(sites: SiteInput[], notes: string, provider: AIProvider) {
-    setProvider(provider);
+  // Model selection removed: Opus 4.7 is the only primary, Sonnet 4.6 is the
+  // only fallback. Provider selection is no longer exposed to the user.
+  async function startAnalysis(sites: SiteInput[], notes: string) {
     setAppPhase("analyzing");
     setSubPhase("cluster");
     setLog([]); setError(null);
@@ -1009,6 +1030,7 @@ Write:
 }`;
 
     addLog("  Computing plan delta…");
+    setAICallPhase("Plan delta (expert feedback)");
     const delta = await callAIJsonStrict<PlanDelta>(
       `You are refining a content plan based on expert feedback.
 You DO NOT return the full plan. You return only a DELTA describing what to add, modify, or remove.
@@ -1034,7 +1056,7 @@ Produce the minimal delta to apply this feedback.
 For additive feedback ("consider more roles/verticals/topics"), return add items with full ContentItem schema. Each new item must include cluster, pageTypeCategory, priorityTier, sourceMaterial, funnelStage, etc.
 For removal feedback, return remove:[{priority, reason}] with brief justification.
 For modification feedback, return modify:[{priority, changes, reason}] with only the fields that change.`,
-      4000
+      5000
     );
 
     addLog(`  Delta: +${delta.add?.length || 0} add, ~${delta.modify?.length || 0} modify, -${delta.remove?.length || 0} remove`);
