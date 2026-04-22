@@ -278,6 +278,27 @@ export default function InputPhase({
 
   return (
     <div style={{ maxWidth: 820, margin: "0 auto" }}>
+      {/* ─── Top bar — Load saved analysis button ──────────────────────────────
+          Prominent top-right placement. "Start new analysis" is the page
+          default; Load is for resuming / reviewing prior work. */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <button
+          onClick={() => fileRef.current?.click()}
+          style={{
+            ...btn("ghost"),
+            fontSize: 13,
+            padding: "8px 14px",
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+          }}
+        >
+          <span style={{ fontSize: 14 }}>↑</span>
+          <span>Load saved analysis</span>
+        </button>
+        <input ref={fileRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleFileLoad} />
+      </div>
+
       {/* Hero */}
       <div style={{ marginBottom: 28, textAlign:"center" }}>
         <h1 style={{ fontSize: 32, fontWeight: 900, color: T.text, margin: "0 0 10px", letterSpacing:"-1px" }}>
@@ -379,10 +400,6 @@ export default function InputPhase({
         </button>
         {!clientReady && <span style={{ fontSize:12.5, color:T.error }}>Add your client site first</span>}
         {clientReady && !compReady && <span style={{ fontSize:12.5, color:T.error }}>Add at least one competitor</span>}
-        <button onClick={() => fileRef.current?.click()} style={{ ...btn("ghost"), fontSize:13 }}>
-          ↑ Load saved analysis
-        </button>
-        <input ref={fileRef} type="file" accept=".json" style={{ display:"none" }} onChange={handleFileLoad} />
       </div>
     </div>
   );

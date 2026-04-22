@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { T, btn, badge } from "@/lib/design";
 import type { SiteAnalysis, GapAnalysis, ContentItem, ICPAnalysis } from "@/lib/types";
 import OverviewTab    from "../tabs/OverviewTab";
@@ -20,6 +20,7 @@ interface Props {
   onUpdateIcpNarr:   (s: string) => void;
   onExportXLSX:      () => void;
   onExportDoc:       () => void;
+  onExportMarkdown:  () => void;
   onSaveJson:        () => void;
   onReset:           () => void;
 }
@@ -28,18 +29,38 @@ export default function ResultsPhase({
   siteAnalyses, gapAnalysis, contentPlan, icpAnalysis,
   strategyNarrative, icpNarrative,
   onUpdateStratNarr, onUpdateIcpNarr,
-  onExportXLSX, onExportDoc, onSaveJson, onReset,
+  onExportXLSX, onExportDoc, onExportMarkdown, onSaveJson, onReset,
 }: Props) {
-  const [tab, setTab] = useState("overview");
+  // ─── Content→ICP tab visibility ────────────────────────────────────────────
+  // The plan↔ICP linker can produce zero matches when the plan targets one
+  // audience (e.g. consumer personas) and ICPs target another (e.g. B2B buyers).
+  // In that case the tab is useless — hide it from the nav rather than show an
+  // always-empty screen. Auto-reveals as soon as there's at least one mapping.
+  const hasIcpMappings = useMemo(() => {
+    const icpIds = new Set((icpAnalysis?.icps || []).map(i => i.id));
+    if (!icpIds.size) return false;
+    return contentPlan.some(item =>
+      (item.icpIds || []).some(id => icpIds.has(id))
+    );
+  }, [contentPlan, icpAnalysis]);
 
   const tabs = [
     { key:"overview",   label:"Overview" },
     { key:"gaps",       label:`Gaps (${(gapAnalysis?.gaps||[]).length})` },
     { key:"plan",       label:`Content Plan (${contentPlan.length})` },
     { key:"icp",        label:`ICP Profiles (${icpAnalysis?.icps?.length||0})` },
-    { key:"content_icp",label:"Content → ICP" },
+    // Content→ICP only appears when linker produced matches
+    ...(hasIcpMappings ? [{ key:"content_icp", label:"Content → ICP" }] : []),
     { key:"narrative",  label:"Narratives ✎" },
   ];
+
+  const [tab, setTab] = useState("overview");
+
+  // Safety: if the user was viewing content_icp and it just got hidden
+  // (e.g. they loaded an older analysis that had no mappings), bounce back.
+  useEffect(() => {
+    if (tab === "content_icp" && !hasIcpMappings) setTab("overview");
+  }, [tab, hasIcpMappings]);
 
   const clientAn = Object.values(siteAnalyses).find(a => a.isClient);
   const compAns  = Object.values(siteAnalyses).filter(a => !a.isClient);
@@ -58,10 +79,11 @@ export default function ResultsPhase({
           </p>
         </div>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap", justifyContent:"flex-end" }}>
-          <button onClick={onReset}      style={btn("ghost")}>← New Analysis</button>
-          <button onClick={onSaveJson}   style={btn("default")}>⬇ Save .json</button>
-          <button onClick={onExportDoc}  style={btn("default")}>⬇ Word Docs</button>
-          <button onClick={onExportXLSX} style={btn("primary")}>⬇ Export XLSX</button>
+          <button onClick={onReset}           style={btn("ghost")}>← New Analysis</button>
+          <button onClick={onExportMarkdown}  style={btn("default")}>⬇ .md</button>
+          <button onClick={onSaveJson}        style={btn("default")}>⬇ .json</button>
+          <button onClick={onExportDoc}       style={btn("default")}>⬇ Word Doc</button>
+          <button onClick={onExportXLSX}      style={btn("primary")}>⬇ Export XLSX</button>
         </div>
       </div>
 
@@ -78,7 +100,7 @@ export default function ResultsPhase({
       {tab==="gaps"        && <GapTab gapAnalysis={gapAnalysis} />}
       {tab==="plan"        && <PlanTab items={contentPlan} icps={icpAnalysis?.icps||[]} />}
       {tab==="icp"         && <ICPTab icpAnalysis={icpAnalysis} clientName={clientAn?.siteName||""} />}
-      {tab==="content_icp" && <ContentICPTab contentPlan={contentPlan} icps={icpAnalysis?.icps||[]} />}
+      {tab==="content_icp" && hasIcpMappings && <ContentICPTab contentPlan={contentPlan} icps={icpAnalysis?.icps||[]} />}
       {tab==="narrative"   && (
         <NarrativeTab
           strategyNarrative={strategyNarrative}

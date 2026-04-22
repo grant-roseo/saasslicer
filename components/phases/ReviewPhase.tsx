@@ -34,16 +34,39 @@ export default function ReviewPhase({
   isRefining,
 }: {
   contentPlan: ContentItem[];
-  onContinue: (feedback: string) => void;
+  // New signature: receives free-text feedback AND the list of priorities
+  // the analyst queued for removal. Either or both may be non-empty.
+  onContinue: (feedback: string, removedPriorities: number[]) => void;
   isRefining: boolean;
 }) {
   const [feedback, setFeedback] = useState("");
   const [showAll, setShowAll]   = useState(false);
 
+  // Queued removals — set of `item.priority` values. Using priority rather than
+  // index so the queue survives sort/filter changes to the displayed list.
+  // (The actual items being targeted are identified by priority number in the
+  // delta prompt too — keeping the identifier consistent end-to-end.)
+  const [queuedRemoval, setQueuedRemoval] = useState<Set<number>>(new Set());
+
+  function toggleRemoval(priority: number) {
+    setQueuedRemoval(prev => {
+      const next = new Set(prev);
+      if (next.has(priority)) next.delete(priority);
+      else next.add(priority);
+      return next;
+    });
+  }
+
+  function clearQueue() {
+    setQueuedRemoval(new Set());
+  }
+
   const displayed  = showAll ? contentPlan : contentPlan.slice(0, 30);
   const netNew     = contentPlan.filter(i => i.action === "net_new").length;
   const refresh    = contentPlan.filter(i => i.action === "refresh").length;
   const repurpose  = contentPlan.filter(i => i.action === "repurpose").length;
+
+  const queuedCount = queuedRemoval.size;
 
   // Cluster breakdown — shows the strategic arc of the plan
   const clusterOrder: ContentCluster[] = [
@@ -66,13 +89,27 @@ export default function ReviewPhase({
     return T.error;
   }
 
+  // Button label adapts to context — free-text vs removals vs both vs neither.
+  // Helps the analyst confirm they understand what will happen.
+  const hasFeedback = feedback.trim().length > 0;
+  const hasRemovals = queuedCount > 0;
+  const ctaLabel = isRefining
+    ? "Refining…"
+    : hasFeedback && hasRemovals
+      ? `⚡ Apply Feedback & Remove ${queuedCount}`
+      : hasRemovals
+        ? `⚡ Remove ${queuedCount} & Continue`
+        : hasFeedback
+          ? "⚡ Apply Feedback & Continue"
+          : "⚡ Looks Good — Generate ICPs & Narrative";
+
   return (
     <div style={{ maxWidth: 1040, margin: "0 auto" }}>
       <div style={{ marginBottom: 24 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: T.accent, textTransform: "uppercase", letterSpacing: "1px", marginBottom: 8 }}>Expert Review</div>
         <h2 style={{ fontSize: 26, fontWeight: 800, color: T.text, margin: "0 0 10px", letterSpacing: "-0.5px" }}>Review before finalising</h2>
         <p style={{ fontSize: 14, color: T.muted, maxWidth: 720, lineHeight: 1.65 }}>
-          Feedback is applied as a <strong>delta</strong>: items you don&rsquo;t call out stay untouched. Add roles/verticals, flag existing pages for refresh, or remove what doesn&rsquo;t fit — everything else is preserved.
+          Click <strong>×</strong> next to any row to queue it for removal, and/or type specific feedback below. Both work together: queued removals are sent to Claude with your feedback as a hint, and everything you don&rsquo;t touch is preserved exactly.
         </p>
       </div>
 
@@ -111,6 +148,45 @@ export default function ReviewPhase({
         </div>
       )}
 
+      {/* Queued-for-removal banner — appears above the table when queue is non-empty */}
+      {queuedCount > 0 && (
+        <div style={{
+          background: T.errorBg,
+          border: `1px solid ${T.errorBdr}`,
+          borderRadius: 8,
+          padding: "10px 16px",
+          marginBottom: 14,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 14,
+        }}>
+          <div style={{ fontSize: 13, color: T.error, fontWeight: 600 }}>
+            {queuedCount} item{queuedCount > 1 ? "s" : ""} queued for removal
+            <span style={{ fontWeight: 400, color: T.muted, marginLeft: 6 }}>
+              — nothing is removed until you click Continue.
+            </span>
+          </div>
+          <button
+            onClick={clearQueue}
+            style={{
+              background: T.surface,
+              border: `1px solid ${T.errorBdr}`,
+              color: T.error,
+              padding: "4px 10px",
+              borderRadius: 6,
+              fontSize: 12,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: "inherit",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Clear queue
+          </button>
+        </div>
+      )}
+
       {/* Plan table */}
       <div style={{ ...card(), marginBottom: 20, padding: 0, overflow: "hidden" }}>
         <div style={{ padding: "14px 18px", borderBottom: "1px solid " + T.border, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -121,45 +197,80 @@ export default function ReviewPhase({
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead>
               <tr style={{ background: T.bg }}>
-                {["#", "Tier", "Cluster", "Page Title", "URL", "Funnel", "Action", "Effort"].map(h => (
+                {["", "#", "Tier", "Cluster", "Page Title", "URL", "Funnel", "Action", "Effort"].map(h => (
                   <th key={h} style={{ textAlign: "left", padding: "8px 12px", color: T.muted, fontWeight: 600, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.4px", borderBottom: "1px solid " + T.border, whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {displayed.map((item, idx) => (
-                <tr key={idx} style={{ background: idx % 2 === 0 ? T.surface : T.bg }}>
-                  <td style={{ padding: "7px 12px", color: T.dim, fontWeight: 700, borderBottom: "1px solid " + T.borderLight, fontSize: 11 }}>{item.priority}</td>
-                  <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap" }}>
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: item.priorityTier === "P1" ? T.error : item.priorityTier === "P2" ? T.info : T.muted }}>
-                      {item.priorityTier || "P2"}
-                    </span>
-                  </td>
-                  <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap" }}>
-                    {item.cluster ? (
-                      <span style={{ fontSize: 11, color: clusterColor(item.cluster), fontWeight: 600 }}>
-                        {CLUSTER_LABELS[item.cluster]}
+              {displayed.map((item, idx) => {
+                const isQueued = queuedRemoval.has(item.priority);
+                // Queued rows get a muted/strikethrough look. Text fields with
+                // strikethrough are applied via CSS on the key cells only.
+                const rowBg = isQueued
+                  ? T.errorBg
+                  : idx % 2 === 0 ? T.surface : T.bg;
+                const textDecoration = isQueued ? "line-through" : "none";
+                const rowOpacity = isQueued ? 0.55 : 1;
+                return (
+                  <tr key={idx} style={{ background: rowBg, transition: "background 0.12s" }}>
+                    {/* Remove / Undo icon column */}
+                    <td style={{ padding: "7px 6px 7px 12px", borderBottom: "1px solid " + T.borderLight, width: 32 }}>
+                      <button
+                        onClick={() => toggleRemoval(item.priority)}
+                        title={isQueued ? "Undo removal" : "Remove from final plan"}
+                        style={{
+                          width: 22, height: 22,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          background: isQueued ? T.success + "22" : "transparent",
+                          color: isQueued ? T.success : T.dim,
+                          border: `1px solid ${isQueued ? T.success + "55" : T.border}`,
+                          borderRadius: 4,
+                          cursor: "pointer",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          fontFamily: "inherit",
+                          padding: 0,
+                          lineHeight: 1,
+                          transition: "all 0.12s",
+                        }}
+                        aria-label={isQueued ? "Undo removal" : "Remove from final plan"}
+                      >
+                        {isQueued ? "↶" : "×"}
+                      </button>
+                    </td>
+                    <td style={{ padding: "7px 12px", color: T.dim, fontWeight: 700, borderBottom: "1px solid " + T.borderLight, fontSize: 11, opacity: rowOpacity }}>{item.priority}</td>
+                    <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap", opacity: rowOpacity }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: item.priorityTier === "P1" ? T.error : item.priorityTier === "P2" ? T.info : T.muted }}>
+                        {item.priorityTier || "P2"}
                       </span>
-                    ) : <span style={{ fontSize: 11, color: T.dim }}>—</span>}
-                  </td>
-                  <td style={{ padding: "7px 12px", color: T.text, fontWeight: 600, borderBottom: "1px solid " + T.borderLight, maxWidth: 260 }}>
-                    <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.pageTitle}</div>
-                    {item.targetQuery && <div style={{ fontSize: 11, color: T.dim, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.targetQuery}</div>}
-                  </td>
-                  <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, maxWidth: 180 }}>
-                    <div style={{ fontFamily: "monospace", fontSize: 10.5, color: T.info, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.urlSuggestion}</div>
-                  </td>
-                  <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap" }}>
-                    <span style={badge(T.funnel[item.funnelStage] || T.muted)}>{item.funnelStage}</span>
-                  </td>
-                  <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap" }}>
-                    <span style={badge(actionCol(item.action))}>{item.action.replace("_", " ")}</span>
-                  </td>
-                  <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap" }}>
-                    <span style={badge(effortCol(item.estimatedEffort || "medium"))}>{item.estimatedEffort}</span>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap", opacity: rowOpacity }}>
+                      {item.cluster ? (
+                        <span style={{ fontSize: 11, color: clusterColor(item.cluster), fontWeight: 600 }}>
+                          {CLUSTER_LABELS[item.cluster]}
+                        </span>
+                      ) : <span style={{ fontSize: 11, color: T.dim }}>—</span>}
+                    </td>
+                    <td style={{ padding: "7px 12px", color: T.text, fontWeight: 600, borderBottom: "1px solid " + T.borderLight, maxWidth: 260, opacity: rowOpacity }}>
+                      <div title={item.pageTitle} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration }}>{item.pageTitle}</div>
+                      {item.targetQuery && <div title={item.targetQuery} style={{ fontSize: 11, color: T.dim, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration }}>{item.targetQuery}</div>}
+                    </td>
+                    <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, maxWidth: 180, opacity: rowOpacity }}>
+                      <div title={item.urlSuggestion} style={{ fontFamily: "monospace", fontSize: 10.5, color: T.info, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textDecoration }}>{item.urlSuggestion}</div>
+                    </td>
+                    <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap", opacity: rowOpacity }}>
+                      <span style={badge(T.funnel[item.funnelStage] || T.muted)}>{item.funnelStage}</span>
+                    </td>
+                    <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap", opacity: rowOpacity }}>
+                      <span style={badge(actionCol(item.action))}>{item.action.replace("_", " ")}</span>
+                    </td>
+                    <td style={{ padding: "7px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap", opacity: rowOpacity }}>
+                      <span style={badge(effortCol(item.estimatedEffort || "medium"))}>{item.estimatedEffort}</span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -191,9 +302,10 @@ export default function ReviewPhase({
           value={feedback}
           onChange={e => setFeedback(e.target.value)}
         />
-        {feedback.trim() && (
+        {(hasFeedback || hasRemovals) && (
           <div style={{ fontSize: 12, color: T.info, marginTop: 6, lineHeight: 1.6 }}>
-            Feedback is applied as a delta (add / modify / remove). Items you don&rsquo;t mention are preserved exactly. Any delta that would remove {'>'}40% of items is rejected automatically — the original plan is kept safe.
+            {hasFeedback && hasRemovals && "Free-text feedback is authoritative — if your text contradicts queued removals, the text wins. "}
+            Items you don&rsquo;t mention or queue are preserved exactly. Any delta that would remove {'>'}40% of items is rejected automatically — the original plan is kept safe.
           </div>
         )}
       </div>
@@ -201,15 +313,15 @@ export default function ReviewPhase({
       {/* CTA */}
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
         <button
-          onClick={() => onContinue(feedback)}
+          onClick={() => onContinue(feedback, Array.from(queuedRemoval))}
           disabled={isRefining}
           style={{ ...btn("primary"), fontSize: 15, padding: "13px 40px", opacity: isRefining ? 0.5 : 1, cursor: isRefining ? "not-allowed" : "pointer" }}
         >
-          {isRefining ? "Refining…" : feedback.trim() ? "⚡ Apply Delta & Continue" : "⚡ Looks Good — Generate ICPs & Narrative"}
+          {ctaLabel}
         </button>
         {isRefining && <div style={{ fontSize: 13, color: T.muted }}>Applying delta and generating ICPs…</div>}
       </div>
-      {feedback.trim() && !isRefining && (
+      {(hasFeedback || hasRemovals) && !isRefining && (
         <div style={{ marginTop: 10, fontSize: 12.5, color: T.muted }}>
           Delta merge (~10s) → ICP analysis (4 batches, ~90s) → Strategy narrative (~30s) → ICP narrative (~30s)
         </div>
