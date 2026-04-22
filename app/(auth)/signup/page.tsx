@@ -1,14 +1,17 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { T, card, btn, btnDisabled, inputStyle, labelStyle } from "@/lib/design";
 
+// Opt out of static prerendering — see signin/page.tsx for rationale.
+export const dynamic = "force-dynamic";
+
 function SignUpForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = createSupabaseBrowserClient();
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   const rawNext = searchParams.get("next") || "/app";
   const safeNext = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/app";
@@ -19,6 +22,9 @@ function SignUpForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  // Set when Supabase returns a "successful" signup but the email is actually
+  // already registered — see comment below in handleSubmit.
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
@@ -29,19 +35,54 @@ function SignUpForm() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    setAlreadyRegistered(false);
     setSubmitting(true);
+
+    // Build the post-confirmation redirect URL. We append `welcome=1` so /app
+    // can show a one-time welcome banner when this is a fresh signup hitting
+    // the app for the first time. Done with URL parsing so we don't break
+    // any existing query string in `safeNext` (e.g. `/pricing?plan=scale`).
+    const redirectUrl = (() => {
+      const u = new URL("/auth/callback", window.location.origin);
+      // Inner next URL must include welcome=1
+      const innerNext = new URL(safeNext, window.location.origin);
+      innerNext.searchParams.set("welcome", "1");
+      // Strip origin from inner so callback's safeNext check accepts it
+      u.searchParams.set("next", innerNext.pathname + innerNext.search);
+      return u.toString();
+    })();
 
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeNext)}`,
+        emailRedirectTo: redirectUrl,
         data: { full_name: fullName || undefined },
       },
     });
 
     if (error) {
       setError(error.message);
+      setSubmitting(false);
+      return;
+    }
+
+    // ─── Duplicate-email detection ──────────────────────────────────────────
+    // Supabase silently swallows duplicate-email signups (anti-enumeration
+    // defense — prevents attackers from probing the user list). When the email
+    // is already registered, Supabase still returns a "user" object but with
+    // an empty `identities` array. Genuine new signups have at least one
+    // identity entry. We use this signal to give users a useful next step
+    // (sign in or reset password) instead of silently waiting for an email
+    // that will never arrive.
+    //
+    // This is documented Supabase behavior, not a hack. See:
+    //   github.com/supabase/auth/issues/1517 (and many docs PRs since)
+    const identities = data?.user?.identities;
+    const isDuplicate = !data.session && Array.isArray(identities) && identities.length === 0;
+
+    if (isDuplicate) {
+      setAlreadyRegistered(true);
       setSubmitting(false);
       return;
     }
@@ -60,7 +101,71 @@ function SignUpForm() {
   const passwordOk = password.length >= 8;
   const canSubmit = email.length > 0 && passwordOk && !submitting;
 
+  // ─── "You already have an account" screen ───────────────────────────────
+  // Shown when Supabase signaled (via empty identities) that this email is
+  // already registered. We don't show this for unconfirmed accounts because
+  // Supabase's signup endpoint will resend the confirmation in that case —
+  // the empty-identities signal only fires for fully registered accounts.
+  if (alreadyRegistered) {
+    const resetHref = `/reset-password?email=${encodeURIComponent(email)}`;
+    const signinHref = `/signin?email=${encodeURIComponent(email)}${rawNext !== "/app" ? `&next=${encodeURIComponent(safeNext)}` : ""}`;
+    return (
+      <>
+        <h1 style={{ fontSize: 24, fontWeight: 800, color: T.text, margin: "0 0 8px", letterSpacing: "-0.5px" }}>
+          You already have an account
+        </h1>
+        <p style={{ fontSize: 14, color: T.muted, margin: "0 0 24px", lineHeight: 1.6 }}>
+          An account with <strong style={{ color: T.text }}>{email}</strong> already exists.
+          Sign in or reset your password.
+        </p>
+
+        <div style={{ ...card(), padding: 20 }}>
+          <Link
+            href={signinHref}
+            style={{
+              display: "block", textAlign: "center",
+              ...btn("primary"), padding: "12px",
+              textDecoration: "none", marginBottom: 10,
+            }}
+          >
+            Sign in to {email}
+          </Link>
+          <Link
+            href={resetHref}
+            style={{
+              display: "block", textAlign: "center",
+              padding: "10px 12px",
+              fontSize: 13.5, fontWeight: 600, color: T.text,
+              textDecoration: "none",
+              border: `1px solid ${T.border}`, borderRadius: 8,
+              background: T.surface,
+            }}
+          >
+            Reset password
+          </Link>
+        </div>
+
+        <p style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: T.muted }}>
+          Wrong email?{" "}
+          <button
+            type="button"
+            onClick={() => { setAlreadyRegistered(false); setEmail(""); setPassword(""); }}
+            style={{
+              background: "none", border: "none", padding: 0,
+              color: T.accent, fontWeight: 600, fontFamily: "inherit",
+              fontSize: 13, cursor: "pointer", textDecoration: "none",
+            }}
+          >
+            Try a different one
+          </button>
+        </p>
+      </>
+    );
+  }
+
   if (confirmationSent) {
+    const signinHref = `/signin?email=${encodeURIComponent(email)}${rawNext !== "/app" ? `&next=${encodeURIComponent(safeNext)}` : ""}`;
+    const resetHref = `/reset-password?email=${encodeURIComponent(email)}`;
     return (
       <>
         <h1 style={{ fontSize: 24, fontWeight: 800, color: T.text, margin: "0 0 8px", letterSpacing: "-0.5px" }}>
@@ -89,9 +194,25 @@ function SignUpForm() {
           </div>
         </div>
 
+        {/* Already-have-account hint — explicit acknowledgment that no email is
+            sent for already-registered emails (anti-enumeration behavior) */}
+        <div style={{
+          marginTop: 14,
+          padding: "12px 16px",
+          background: T.infoBg, border: `1px solid ${T.infoBdr}`, borderRadius: 8,
+        }}>
+          <div style={{ fontSize: 12.5, color: T.info, lineHeight: 1.6 }}>
+            <strong>Already have an account?</strong> If {email} is already registered,
+            we don&rsquo;t send a duplicate confirmation. Try{" "}
+            <Link href={signinHref} style={{ color: T.info, fontWeight: 700, textDecoration: "underline" }}>signing in</Link>
+            {" "}or{" "}
+            <Link href={resetHref} style={{ color: T.info, fontWeight: 700, textDecoration: "underline" }}>resetting your password</Link>.
+          </div>
+        </div>
+
         <p style={{ textAlign: "center", marginTop: 18, fontSize: 13, color: T.muted }}>
           Already confirmed?{" "}
-          <Link href="/signin" style={{ color: T.accent, fontWeight: 600, textDecoration: "none" }}>
+          <Link href={signinHref} style={{ color: T.accent, fontWeight: 600, textDecoration: "none" }}>
             Sign in
           </Link>
         </p>

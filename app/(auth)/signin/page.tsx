@@ -1,21 +1,32 @@
 "use client";
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useMemo, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { T, card, btn, btnDisabled, inputStyle, labelStyle } from "@/lib/design";
 
+// Opt out of static prerendering. This page is interactive auth UI — it has
+// no useful static representation and any prerender attempt would fail
+// because the Supabase client construction needs runtime env vars.
+export const dynamic = "force-dynamic";
+
 function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const supabase = createSupabaseBrowserClient();
+  // Memoize so the client is constructed once per mount, not per render.
+  // The empty dep array also defers construction past prerender.
+  const supabase = useMemo(() => createSupabaseBrowserClient(), []);
 
   // Sanitize the `next` param: only allow same-origin paths starting with /,
   // not protocol-relative URLs like //evil.com or full URLs. Open-redirect protection.
   const rawNext = searchParams.get("next") || "/app";
   const safeNext = rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/app";
 
-  const [email, setEmail] = useState("");
+  // Optional ?email= prefill — used by the duplicate-signup CTA on the
+  // signup page so users land here with their email already filled.
+  const initialEmail = searchParams.get("email") || "";
+
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,11 +91,20 @@ function SignInForm() {
 
           {error && (
             <div style={{
-              fontSize: 13, color: T.error, padding: "8px 12px",
+              fontSize: 13, color: T.error, padding: "10px 12px",
               background: T.errorBg, border: `1px solid ${T.errorBdr}`,
               borderRadius: 7, marginBottom: 14,
             }}>
-              {error}
+              <div>{error}</div>
+              <div style={{ marginTop: 6, fontSize: 12, color: T.muted }}>
+                Forgot your password?{" "}
+                <Link
+                  href={`/reset-password?email=${encodeURIComponent(email)}`}
+                  style={{ color: T.error, fontWeight: 700, textDecoration: "underline" }}
+                >
+                  Reset it
+                </Link>.
+              </div>
             </div>
           )}
 
