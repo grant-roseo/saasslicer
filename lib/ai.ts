@@ -1,7 +1,7 @@
 // ─── AI Layer ────────────────────────────────────────────────────────────────
 // As of April 2026:
 //   Primary model:    Claude Opus 4.7  (claude-opus-4-7)    — $5 in / $25 out per 1M
-//   Fallback model:   Claude Sonnet 4.6 (claude-sonnet-4-6-20260220) — $3 in / $15 out
+//   Fallback model:   Claude Sonnet 4.6 (claude-sonnet-4-6) — $3 in / $15 out
 //
 // The app used to support user-selectable Anthropic/OpenAI/Gemini providers.
 // That choice has been removed — Opus is the only primary, Sonnet is the only
@@ -28,7 +28,7 @@ import type { AIProvider } from "./types";
 
 // ─── Model strings ───────────────────────────────────────────────────────────
 export const MODEL_PRIMARY  = "claude-opus-4-7";
-export const MODEL_FALLBACK = "claude-sonnet-4-6-20260220";
+export const MODEL_FALLBACK = "claude-sonnet-4-6";
 
 // ─── Provider — retained for compatibility, always "anthropic" now ───────────
 let _provider: AIProvider = "anthropic";
