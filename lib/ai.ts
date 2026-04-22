@@ -70,6 +70,21 @@ function notifyFallback(reason: string, model: string, phase?: string) {
   if (_fallbackListener) { try { _fallbackListener({ reason, model, phase }); } catch {} }
 }
 
+// ─── Truncation notification channel ────────────────────────────────────────
+// Fires when Claude returns stop_reason === "max_tokens" — meaning the model
+// ran out of output budget before finishing. The resulting text is still
+// returned to callers (they get a partial narrative / partial JSON), but we
+// need to surface this to the UI log so users know their output got clipped.
+//
+// Same subscriber pattern as fallback. The event includes the model name,
+// the phase, and the token budget that was hit so UI can render helpfully.
+type TruncationListener = (info: { phase?: string; model: string; maxTokens: number; textLength: number }) => void;
+let _truncationListener: TruncationListener | null = null;
+export function onTruncation(listener: TruncationListener | null) { _truncationListener = listener; }
+function notifyTruncation(model: string, maxTokens: number, textLength: number, phase?: string) {
+  if (_truncationListener) { try { _truncationListener({ model, maxTokens, textLength, phase }); } catch {} }
+}
+
 // ─── Phase tagging — used for nicer fallback log messages ────────────────────
 // Callers can set a phase context; fallback notifications include it so the
 // UI log can say "🔄 Gap Batch 1 fell back to Sonnet" instead of generic.
@@ -112,7 +127,17 @@ async function callAnthropic(
     }
 
     const d = await res.json().catch(() => ({}));
-    if (res.ok && !d.error) return d.content[0].text;
+    if (res.ok && !d.error) {
+      const text = d.content?.[0]?.text || "";
+      // Detect truncation — Claude sets stop_reason="max_tokens" when it
+      // ran out of output budget before finishing. We still return the
+      // partial text (callers might handle it better than failing), but
+      // we fire a notification so the UI can log the warning.
+      if (d.stop_reason === "max_tokens") {
+        notifyTruncation(model, maxTokens, text.length, _currentPhase);
+      }
+      return text;
+    }
 
     const msg = d?.error?.message || d?.message || `API error ${res.status}`;
     const isTransient = res.status === 529 || res.status === 429 || res.status === 503
