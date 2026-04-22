@@ -2,7 +2,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { callAI, callAIJson, callAIJsonStrict, AIParseError, onFallback, setAICallPhase } from "@/lib/ai";
 import { clusterUrls } from "@/lib/cluster";
-import { exportXLSX, exportStrategyDoc, saveJson } from "@/lib/export";
+import { exportXLSX, exportStrategyDoc, exportMarkdown, saveJson } from "@/lib/export";
 import { T } from "@/lib/design";
 import type {
   SiteInput, SiteAnalysis, UrlCluster, CrawledPage,
@@ -1110,7 +1110,7 @@ For modification feedback, return modify:[{priority, changes, reason}] with only
     return result.map((i, idx) => ({ ...i, priority: idx + 1 }));
   }
 
-  async function handleReviewContinue(feedback: string) {
+  async function handleReviewContinue(feedback: string, removedPriorities: number[] = []) {
     setIsRefining(true);
     const clientAn = Object.values(analysesRef.current).find(a => a.isClient)!;
     const compAns  = Object.values(analysesRef.current).filter(a => !a.isClient);
@@ -1118,16 +1118,66 @@ For modification feedback, return modify:[{priority, changes, reason}] with only
     try {
       let finalPlan = planRef.current;
 
-      if (feedback.trim()) {
+      // ── Build combined feedback: free-text is authoritative, removals are
+      //    appended as directive context. Both can be empty (user just clicked
+      //    "Looks Good" without any input) — in that case we skip the delta
+      //    entirely and jump straight to ICP analysis.
+      const trimmedFeedback = feedback.trim();
+      const hasRemovals     = removedPriorities.length > 0;
+      const hasAnyInput     = trimmedFeedback.length > 0 || hasRemovals;
+
+      // Compose the prompt text sent to the delta generator. The ordering
+      // matters — free-text comes FIRST so Claude treats it as the dominant
+      // instruction; the removal list follows as secondary direction that
+      // the free-text can override.
+      let combinedFeedback = trimmedFeedback;
+      if (hasRemovals) {
+        // Look up the page titles so the prompt is self-documenting
+        const removedTitles = removedPriorities
+          .map(p => {
+            const item = planRef.current.find(i => i.priority === p);
+            return item ? `#${p} "${item.pageTitle}"` : `#${p}`;
+          })
+          .join(", ");
+        const removalNote = [
+          "",
+          `ANALYST REMOVAL QUEUE: The analyst has flagged these priorities for removal: ${removedPriorities.join(", ")} (${removedTitles}).`,
+          "Treat this as direction to tighten the plan around stronger items. Remove them unless the free-text feedback above supersedes this decision.",
+        ].join("\n");
+        combinedFeedback = combinedFeedback
+          ? combinedFeedback + "\n" + removalNote
+          : removalNote.trim();
+      }
+
+      if (hasAnyInput) {
         setAppPhase("analyzing");
         setSubPhase("plan");
         addLog("\n━━━ APPLYING EXPERT FEEDBACK (delta merge) ━━━", "header");
-        addLog(feedback.slice(0, 120) + (feedback.length > 120 ? "…" : ""));
+        if (trimmedFeedback) {
+          addLog(`  text: ${trimmedFeedback.slice(0, 120)}${trimmedFeedback.length > 120 ? "…" : ""}`);
+        }
+        if (hasRemovals) {
+          addLog(`  queued for removal: ${removedPriorities.length} item${removedPriorities.length > 1 ? "s" : ""} (#${removedPriorities.join(", #")})`);
+        }
         try {
-          finalPlan = await applyPlanDelta(planRef.current, feedback);
+          const before = planRef.current.length;
+          finalPlan = await applyPlanDelta(planRef.current, combinedFeedback);
+
+          // ── Renumber priorities sequentially after delta completes. ──
+          // Delta removals leave gaps in the numbering (e.g. #1, #2, #3, #7, #15).
+          // Users expect contiguous numbering. Preserve tier/cluster/content —
+          // only the numeric priority display value shifts.
+          finalPlan = finalPlan.map((item, idx) => ({ ...item, priority: idx + 1 }));
+
           planRef.current = finalPlan;
           setContentPlan(finalPlan);
-          addLog(`✅ Plan revised: ${finalPlan.length} items (was ${planRef.current === finalPlan ? "same" : "different"})`, "success");
+          const delta = finalPlan.length - before;
+          addLog(
+            `✅ Plan revised: ${finalPlan.length} items ` +
+            (delta === 0 ? "(same count)" : delta > 0 ? `(+${delta})` : `(${delta})`) +
+            " — priorities renumbered",
+            "success"
+          );
         } catch (err) {
           logAIFailure("Plan delta", err);
           addLog("⚠ Keeping original plan — delta failed to apply safely", "warn");
@@ -1298,6 +1348,7 @@ For modification feedback, return modify:[{priority, changes, reason}] with only
             onUpdateIcpNarr={setIcpNarr}
             onExportXLSX={() => exportXLSX(buildState())}
             onExportDoc={() => exportStrategyDoc(buildState())}
+            onExportMarkdown={() => exportMarkdown(buildState())}
             onSaveJson={() => saveJson(buildState())}
             onReset={resetApp}
           />
