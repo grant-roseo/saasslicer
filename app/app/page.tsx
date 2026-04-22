@@ -1,11 +1,16 @@
 import { redirect } from "next/navigation";
 import SlicerApp from "@/components/SlicerApp";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
+import WelcomeBanner from "./WelcomeBanner";
 
 export const metadata = {
   title: "SaaS Slicer — Competitive Content Analysis",
   description: "AI-powered competitive content strategy for SaaS.",
 };
+
+// Auth-gated route — inherently dynamic (depends on user session cookies).
+// Explicit dynamic flag prevents Next from attempting prerender at build time.
+export const dynamic = "force-dynamic";
 
 // ─── Auth gate ──────────────────────────────────────────────────────────────
 // This Server Component checks the user's Supabase session before rendering
@@ -18,7 +23,19 @@ export const metadata = {
 //
 // Note: SlicerApp itself still calls Anthropic directly from the browser in
 // Phase 2A. The server-side AI proxy arrives in Phase 2C.
-export default async function AppPage() {
+//
+// ─── Welcome flag ───────────────────────────────────────────────────────────
+// Phase 2B auth polish: the signup flow appends `welcome=1` to the email
+// confirmation redirect. We detect it here and render a one-time banner above
+// the SlicerApp. The WelcomeBanner client component is responsible for
+// stripping the param from the URL after first paint so refreshes don't
+// re-show. We don't render <WelcomeBanner /> at all when the flag is absent —
+// no flicker risk on normal repeat visits.
+export default async function AppPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const supabase = await createSupabaseServerClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -26,5 +43,13 @@ export default async function AppPage() {
     redirect("/signin?next=/app");
   }
 
-  return <SlicerApp />;
+  const params = await searchParams;
+  const welcome = params.welcome === "1";
+
+  return (
+    <>
+      {welcome && <WelcomeBanner show />}
+      <SlicerApp />
+    </>
+  );
 }
