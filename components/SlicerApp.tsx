@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { callAI, callAIJson, callAIJsonStrict, AIParseError, onFallback, setAICallPhase } from "@/lib/ai";
+import { callAI, callAIJson, callAIJsonStrict, AIParseError, onFallback, onTruncation, setAICallPhase } from "@/lib/ai";
 import { clusterUrls } from "@/lib/cluster";
 import { exportXLSX, exportStrategyDoc, exportMarkdown, saveJson } from "@/lib/export";
 import { T } from "@/lib/design";
@@ -165,6 +165,23 @@ export default function SlicerApp() {
       addLog(`🔄 ${label}Opus failed, retrying on Sonnet 4.6: ${reason}`, "warn");
     });
     return () => { onFallback(null); };
+  }, [addLog]);
+
+  // ─── Truncation listener ─────────────────────────────────────────────────
+  // Fires when Claude returned stop_reason === "max_tokens" — meaning the
+  // model ran out of output budget mid-response. The text is still in the
+  // output but clipped. Surface this so users know their narrative/plan/etc.
+  // got cut off, and can decide whether to re-run with higher budget.
+  useEffect(() => {
+    onTruncation((info) => {
+      const label = info.phase ? `${info.phase} — ` : "";
+      addLog(
+        `⚠ ${label}output was truncated at ${info.maxTokens} max_tokens ` +
+        `(${info.textLength} chars generated). The result may be cut off.`,
+        "warn"
+      );
+    });
+    return () => { onTruncation(null); };
   }, [addLog]);
 
   // ─── Adaptive crawl loop ────────────────────────────────────────────────────
@@ -887,7 +904,7 @@ Write:
 (cover each of: Core Platform, Role Solutions, Industry Verticals, Topic Guides, Services-Led, Commercial Education, Proof & Hubs, Interactive Tools)
 ## Priority Sequence and Rationale
 ## Bottom Line`,
-        2500
+        5000
       );
     } catch (err) {
       logAIFailure("Strategy narrative", err);
@@ -910,7 +927,7 @@ Write:
 ## Content Recommendations by ICP
 ## Quick Wins — Highest Gap, Lowest Effort
 ## Measuring ICP Coverage Over Time`,
-        2500
+        5000
       );
     } catch (err) {
       logAIFailure("ICP narrative", err);
