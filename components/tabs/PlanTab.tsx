@@ -168,12 +168,12 @@ export default function PlanTab({ items, icps }: { items: ContentItem[]; icps: I
                         : <span style={{ fontSize: 11, color: T.dim }}>—</span>}
                     </td>
                     <td style={{ padding: "9px 12px", borderBottom: "1px solid " + T.borderLight, maxWidth: 280 }}>
-                      <div style={{ fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.pageTitle}</div>
-                      {item.coreAngle && <div style={{ fontSize: 11, color: T.dim, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.coreAngle}</div>}
+                      <div title={item.pageTitle} style={{ fontWeight: 600, color: T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.pageTitle}</div>
+                      {item.coreAngle && <div title={item.coreAngle} style={{ fontSize: 11, color: T.dim, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.coreAngle}</div>}
                     </td>
                     <td style={{ padding: "9px 12px", borderBottom: "1px solid " + T.borderLight, maxWidth: 200 }}>
-                      <div style={{ fontFamily: "monospace", fontSize: 10.5, color: T.info, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.urlSuggestion}</div>
-                      {item.targetQuery && <div style={{ fontSize: 10.5, color: T.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.targetQuery}</div>}
+                      <div title={item.urlSuggestion} style={{ fontFamily: "monospace", fontSize: 10.5, color: T.info, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.urlSuggestion}</div>
+                      {item.targetQuery && <div title={item.targetQuery} style={{ fontSize: 10.5, color: T.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.targetQuery}</div>}
                     </td>
                     <td style={{ padding: "9px 12px", borderBottom: "1px solid " + T.borderLight, whiteSpace: "nowrap" }}>
                       <Tag label={(item.pageTypeCategory || item.contentType || "").replace(/_/g, " ")} color={T.purple} />
