@@ -31,7 +31,7 @@ export default function HomePage() {
           <a href="#features">Features</a>
           <a href="#how-it-works">How it works</a>
           <a href="#who-its-for">Who it&apos;s for</a>
-          <a href="#pricing">Pricing</a>
+          <a href="/pricing">Pricing</a>
         </div>
         <div className="l-nav-cta">
           <a href="/app" className="l-btn l-btn-primary">Start now &rarr;</a>
@@ -138,34 +138,61 @@ export default function HomePage() {
       <section id="pricing" className="l-section" style={{background:"white"}}>
         <div className="l-section-inner">
           <div className="l-label">Pricing</div>
-          <h2 className="l-h2">Affordable by design.</h2>
-          <p className="l-section-sub">One plan. Everything included. Two complete content strategies per month — each one saves hours of research and analyst time.</p>
-          <div style={{maxWidth:480}}>
-            <div className="l-price-card featured">
-              <div className="l-tier">SaaS Slicer</div>
-              <div className="l-price">$99 <span>/ month</span></div>
-              <div className="l-price-sub">2 complete content strategies per month. Everything included.</div>
+          <h2 className="l-h2">Pick your cadence.</h2>
+          <p className="l-section-sub">Every plan includes the full analysis pipeline, ICP profiles, expert review, and every export. Pick the volume that matches your content rhythm.</p>
+          <div style={{display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))", gap:20, alignItems:"start"}}>
+            <div className="l-price-card">
+              <div className="l-tier">Starter</div>
+              <div className="l-price">$59 <span>/ month</span></div>
+              <div className="l-price-sub">1 complete strategy report per month.</div>
               <ul>
-                <li>1 client + up to 5 competitors per run</li>
-                <li>Up to 20 ICP profiles with full buyer language</li>
-                <li>Content plan — net new, refresh &amp; repurpose</li>
-                <li>5-tab Excel workbook export</li>
-                <li>Two Word doc narratives (strategy + ICP)</li>
-                <li>Human-in-the-loop expert review step</li>
-                <li>Saveable JSON session — reload and re-export any time</li>
+                <li>1 report per month</li>
+                <li>1 client + up to 5 competitors</li>
+                <li>Up to 20 ICP profiles</li>
+                <li>All exports (Excel, Word, Markdown, JSON)</li>
+                <li>Expert review step</li>
               </ul>
-              <a href="/app" className="l-btn l-btn-primary" style={{width:"100%",justifyContent:"center",fontSize:15,padding:"13px 0"}}>Get started &rarr;</a>
+              <a href="/pricing?plan=starter" className="l-btn l-btn-outline" style={{width:"100%",justifyContent:"center",fontSize:14,padding:"12px 0"}}>Choose Starter &rarr;</a>
+            </div>
+            <div className="l-price-card featured">
+              <div className="l-price-badge">Most popular</div>
+              <div className="l-tier">Scale</div>
+              <div className="l-price">$99 <span>/ month</span></div>
+              <div className="l-price-sub">2 complete strategy reports per month. ~$50 each.</div>
+              <ul>
+                <li>2 reports per month</li>
+                <li>1 client + up to 5 competitors</li>
+                <li>Up to 20 ICP profiles</li>
+                <li>All exports (Excel, Word, Markdown, JSON)</li>
+                <li>Expert review step</li>
+                <li>Save &amp; reload any analysis</li>
+              </ul>
+              <a href="/pricing?plan=scale" className="l-btn l-btn-primary" style={{width:"100%",justifyContent:"center",fontSize:14,padding:"12px 0"}}>Choose Scale &rarr;</a>
+            </div>
+            <div className="l-price-card">
+              <div className="l-tier">Growth</div>
+              <div className="l-price">$199 <span>/ month</span></div>
+              <div className="l-price-sub">5 complete strategy reports per month. ~$40 each.</div>
+              <ul>
+                <li>5 reports per month</li>
+                <li>1 client + up to 5 competitors</li>
+                <li>Up to 20 ICP profiles</li>
+                <li>All exports (Excel, Word, Markdown, JSON)</li>
+                <li>Expert review step</li>
+                <li>Best per-report price</li>
+              </ul>
+              <a href="/pricing?plan=growth" className="l-btn l-btn-outline" style={{width:"100%",justifyContent:"center",fontSize:14,padding:"12px 0"}}>Choose Growth &rarr;</a>
             </div>
           </div>
-          <p className="l-price-note" style={{maxWidth:480}}>Each run typically takes 5&ndash;10 minutes. Saves hours of manual competitive research and analyst time per strategy.</p>
+          <p className="l-price-note" style={{textAlign:"center",marginTop:28}}>Credits reset monthly. Change plans or cancel anytime &mdash; <a href="/pricing" style={{color:"var(--green)",textDecoration:"none",fontWeight:600}}>see full pricing &amp; FAQ &rarr;</a></p>
         </div>
       </section>
       <div className="l-cta-band">
         <div className="l-cta-inner">
           <h2 className="l-h2">Ready to see what your<br />competitors have built?</h2>
           <p className="l-cta-p">Add your client site and a competitor. SaaS Slicer will map the landscape, find the gaps, and write the strategy &mdash; in one run.</p>
-          <a href="/app" className="l-btn l-btn-primary l-btn-lg" style={{fontSize:16,padding:"15px 36px"}}>Start your analysis &rarr;</a>
-          <div className="l-cta-sub">$99/month &middot; 2 strategies included &middot; Results in 5&ndash;10 minutes</div>
+          <a href="/pricing" className="l-btn l-btn-primary l-btn-lg" style={{fontSize:16,padding:"15px 36px"}}>See plans &rarr;</a>
+          <div className="l-cta-sub">Plans from $59/month &middot; Results in 5&ndash;10 minutes</div>
         </div>
       </div>
       <footer className="l-footer">
