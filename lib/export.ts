@@ -192,23 +192,32 @@ export function exportXLSX(state: AnalysisState) {
   }
 
   // ── Sheet 6: Content → ICP Mapping ──────────────────────────────────────────
+  // Skip entirely when plan-to-ICP linker produced no matches (sheet would be
+  // empty headers only, which is confusing). Same logic as the UI tab hiding.
   if (state.contentPlan.length && state.icpAnalysis?.icps.length) {
-    const rows: (string | number)[][] = [["ICP Name","ICP Role","Industry","Funnel Stage","Page Title","URL","Cluster","Page Type","Action"]];
-    for (const icp of state.icpAnalysis.icps) {
-      const mapped = state.contentPlan.filter(c => (c.icpIds || []).includes(icp.id));
-      for (const item of mapped) {
-        rows.push([
-          icp.name, icp.role, icp.industry, item.funnelStage,
-          item.pageTitle, item.urlSuggestion,
-          item.cluster ? CLUSTER_LABELS[item.cluster] : "",
-          item.pageTypeCategory || "",
-          item.action,
-        ]);
+    const icpIdSet = new Set(state.icpAnalysis.icps.map(i => i.id));
+    const hasAnyMapping = state.contentPlan.some(c =>
+      (c.icpIds || []).some(id => icpIdSet.has(id))
+    );
+
+    if (hasAnyMapping) {
+      const rows: (string | number)[][] = [["ICP Name","ICP Role","Industry","Funnel Stage","Page Title","URL","Cluster","Page Type","Action"]];
+      for (const icp of state.icpAnalysis.icps) {
+        const mapped = state.contentPlan.filter(c => (c.icpIds || []).includes(icp.id));
+        for (const item of mapped) {
+          rows.push([
+            icp.name, icp.role, icp.industry, item.funnelStage,
+            item.pageTitle, item.urlSuggestion,
+            item.cluster ? CLUSTER_LABELS[item.cluster] : "",
+            item.pageTypeCategory || "",
+            item.action,
+          ]);
+        }
       }
+      const ws6 = XLSX.utils.aoa_to_sheet(rows);
+      ws6["!cols"] = [40,28,22,12,42,36,22,22,12].map(w => ({ wch: w }));
+      XLSX.utils.book_append_sheet(wb, ws6, "Content ICP Map");
     }
-    const ws6 = XLSX.utils.aoa_to_sheet(rows);
-    ws6["!cols"] = [40,28,22,12,42,36,22,22,12].map(w => ({ wch: w }));
-    XLSX.utils.book_append_sheet(wb, ws6, "Content ICP Map");
   }
 
   XLSX.writeFile(wb, `saas-slicer-${clientName}-${slugDate()}.xlsx`);
@@ -300,4 +309,114 @@ export function saveJson(state: AnalysisState) {
     `saas-slicer-${clientName}-${slugDate()}.json`,
     "application/json"
   );
+}
+
+// ─── Markdown export ─────────────────────────────────────────────────────────
+// Human-readable narrative + plan table. NOT a reload format — use saveJson for
+// that. This is for "geeks who want to analyse the complete blob" outside of
+// Word/Excel — paste into a note-taking app, commit to a repo, diff two runs, etc.
+export function exportMarkdown(state: AnalysisState) {
+  const clientName = state.sites.find(s => s.role === "client")?.name || "analysis";
+  const competitors = state.sites.filter(s => s.role !== "client");
+  const lines: string[] = [];
+
+  // Header
+  lines.push(`# SaaS Slicer — ${clientName}`);
+  lines.push("");
+  lines.push(`*Generated ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC*`);
+  lines.push("");
+  lines.push(`**Competitors analysed:** ${competitors.map(s => s.name || s.domain).join(", ") || "—"}`);
+  lines.push(`**Plan items:** ${state.contentPlan.length}`);
+  lines.push(`**Gaps identified:** ${(state.gapAnalysis?.gaps || []).length}`);
+  lines.push(`**ICP profiles:** ${state.icpAnalysis?.icps?.length || 0}`);
+  lines.push("");
+
+  // Strategy narrative
+  if (state.strategyNarrative) {
+    lines.push("---");
+    lines.push("");
+    lines.push("# Strategy Narrative");
+    lines.push("");
+    lines.push(state.strategyNarrative.trim());
+    lines.push("");
+  }
+
+  // ICP narrative
+  if (state.icpNarrative) {
+    lines.push("---");
+    lines.push("");
+    lines.push("# ICP Narrative");
+    lines.push("");
+    lines.push(state.icpNarrative.trim());
+    lines.push("");
+  }
+
+  // Gap summary table
+  if (state.gapAnalysis?.gaps?.length) {
+    lines.push("---");
+    lines.push("");
+    lines.push("# Content Gaps");
+    lines.push("");
+    lines.push("| # | Priority | Title | Type | Funnel | Opportunity |");
+    lines.push("|---|---|---|---|---|---|");
+    state.gapAnalysis.gaps.forEach((g, i) => {
+      const opp = (g.opportunity || "").replace(/\|/g, "\\|").replace(/\n/g, " ");
+      const title = (g.title || "").replace(/\|/g, "\\|");
+      lines.push(`| ${i + 1} | ${g.priority || "—"} | ${title} | ${g.gapType || "—"} | ${g.funnelStage || "—"} | ${opp} |`);
+    });
+    lines.push("");
+  }
+
+  // Plan table
+  if (state.contentPlan?.length) {
+    lines.push("---");
+    lines.push("");
+    lines.push(`# Content Plan (${state.contentPlan.length} items)`);
+    lines.push("");
+    lines.push("| # | Tier | Cluster | Page Title | URL | Funnel | Action | Effort |");
+    lines.push("|---|---|---|---|---|---|---|---|");
+    state.contentPlan.forEach((item, idx) => {
+      const title = (item.pageTitle || "").replace(/\|/g, "\\|");
+      const url = (item.urlSuggestion || "").replace(/\|/g, "\\|");
+      const cluster = item.cluster ? CLUSTER_LABELS[item.cluster] : "—";
+      lines.push(
+        `| ${item.priority ?? idx + 1} | ${item.priorityTier || "P2"} | ${cluster} | ${title} | \`${url}\` | ${item.funnelStage || "—"} | ${item.action || "—"} | ${item.estimatedEffort || "—"} |`
+      );
+    });
+    lines.push("");
+  }
+
+  // ICP profiles
+  if (state.icpAnalysis?.icps?.length) {
+    lines.push("---");
+    lines.push("");
+    lines.push(`# ICP Profiles (${state.icpAnalysis.icps.length})`);
+    lines.push("");
+    state.icpAnalysis.icps.forEach((icp, i) => {
+      lines.push(`## ${i + 1}. ${icp.name}`);
+      lines.push("");
+      lines.push(`- **Role:** ${icp.role}`);
+      lines.push(`- **Industry:** ${icp.industry}`);
+      lines.push(`- **Company size:** ${icp.companySizeProfile || "—"}`);
+      if (typeof icp.gapScore === "number")           lines.push(`- **Gap score:** ${icp.gapScore}/100`);
+      if (typeof icp.clientCoverageScore === "number") lines.push(`- **Client coverage:** ${icp.clientCoverageScore}/100`);
+      if (icp.primaryPains?.length) {
+        lines.push("- **Primary pains:**");
+        icp.primaryPains.forEach(p => lines.push(`  - ${p}`));
+      }
+      if (icp.jobsToBeDone?.length) {
+        lines.push("- **Jobs to be done:**");
+        icp.jobsToBeDone.forEach(j => lines.push(`  - ${j}`));
+      }
+      lines.push("");
+    });
+  }
+
+  // Footer
+  lines.push("---");
+  lines.push("");
+  lines.push("*Generated by SaaS Slicer. Full JSON available via the Save JSON export.*");
+  lines.push("");
+
+  dl(lines.join("\n"), `saas-slicer-${clientName}-${slugDate()}.md`, "text/markdown");
 }
